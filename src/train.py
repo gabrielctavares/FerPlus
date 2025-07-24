@@ -75,9 +75,10 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             dataset.plot_class_distribution(writer, step=0)
 
    # DataLoaders
+    num_workers = min(2, os.cpu_count() // 2)
     dl = {
         split: DataLoader(dataset, batch_size=bs, shuffle=(split=='train'),
-                          num_workers=4, pin_memory=True)
+                          num_workers=num_workers, pin_memory=True)
         for split, dataset in ds.items()
     }
 
