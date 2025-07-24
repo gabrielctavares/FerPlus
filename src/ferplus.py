@@ -1,147 +1,246 @@
 import os
 import csv
-import torch
+import sys
 import numpy as np
+import torch
 from torch.utils.data import Dataset
 from PIL import Image
-from rect_util import Rect
-import img_util as imgu  # adapta conforme original
+import logging
 
-import sys
+# Dependências externas (certifique-se que estes módulos estejam disponíveis)
+from rect_util import Rect
+import img_util as imgu
 
 class FERPlusDataset(Dataset):
-    def __init__(self, folder_paths, label_file_name, num_classes, width, height,
-                 mode='majority', shuffle=True, deterministic=False):
+    """
+    Dataset para FER+ com modos `majority`, `probability`, `crossentropy` e `multi_target`.
+    Refatorado para maior modularidade e robustez.
+
+    Inclui método para plotar e registrar a distribuição de classes no TensorBoard.
+    """
+    def __init__(
+        self,
+        folder_paths,
+        label_file_name,
+        num_classes,
+        width,
+        height,
+        mode='majority',
+        shuffle=True,
+        deterministic=False
+    ):
+        # Parâmetros básicos
         self.folder_paths = folder_paths
         self.label_file_name = label_file_name
-        self.num_classes = num_classes  # classes válidas (exclui unknown e non-face)
+        self.num_classes = num_classes  # ignora classes unknown e non-face
         self.width = width
         self.height = height
         self.mode = mode
         self.shuffle = shuffle
 
+        # Parâmetros de augmentação
         if deterministic:
-            self.max_shift = 0.0; self.max_scale = 1.0
-            self.max_angle = 0.0; self.max_skew = 0.0; self.do_flip = False
+            self.aug_params = dict(max_shift=0.0, max_scale=1.0, max_angle=0.0, max_skew=0.0, flip=False)
         else:
-            self.max_shift = 0.08; self.max_scale = 1.05
-            self.max_angle = 20.0; self.max_skew = 0.05; self.do_flip = True
+            self.aug_params = dict(max_shift=0.08, max_scale=1.05, max_angle=20.0, max_skew=0.05, flip=True)
 
-        self.A, self.A_pinv = imgu.compute_norm_mat(self.width, self.height)
-        self.data = []
-        self._load_data()
+        # Pré-cálculo da matriz de normalização geométrica
+        self.A, self.A_pinv = imgu.compute_norm_mat(width, height)
 
-    def _load_data(self):
-        for folder in self.folder_paths:
-            path = os.path.join(folder, self.label_file_name)
-            with open(path, newline='') as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    img_path = os.path.join(folder, row[0])
-                    box = list(map(int, row[1][1:-1].split(',')))
-                    face_rc = Rect(box)
-                    raw = list(map(float, row[2:]))
-
-                    dist = self._process_data(raw)
-                    if dist is not None:
-                        # descarta unknown e non-face (últimos 2)
-                        valid_dist = dist[:self.num_classes]
-                        self.data.append((img_path, valid_dist, face_rc))
+        # Carrega dados em memória
+        self.data = self._load_data()
         if self.shuffle:
             np.random.shuffle(self.data)
 
-    # Substitua todo o método _process_data por:
-    def _process_data(self, emotion_raw):
-        size = len(emotion_raw)
-        emotion_unknown = [0.0] * size
-        emotion_unknown[-2] = 1.0  # unknown
+    def _load_data(self):
+        samples = []
+        for folder in self.folder_paths:
+            csv_path = os.path.join(folder, self.label_file_name)
+            with open(csv_path, newline='') as f:
+                reader = csv.reader(f)
+                # next(reader)  # descomente se houver cabeçalho
+                for row in reader:
+                    parsed = self._parse_csv_row(folder, row)
+                    if parsed is not None:
+                        samples.append(parsed)
+        return samples
 
-        # Remove votos únicos
-        for i in range(size):
-            if emotion_raw[i] < 1.0 + sys.float_info.epsilon:
-                emotion_raw[i] = 0.0
+    def _parse_csv_row(self, folder, row):
+        # Monta caminho da imagem
+        img_path = os.path.join(folder, row[0])
+        if not os.path.isfile(img_path):
+            logging.warning(f"Arquivo não encontrado: {img_path}")
+            return None
 
-        sum_list = sum(emotion_raw)
-        emotion = [0.0] * size
-        
+        # Extrai box e cria Rect
+        coords = row[1].strip('()').split(',')
+        face_rc = Rect(list(map(int, coords)))
+
+        # Votos brutos (float)
+        raw_votes = list(map(float, row[2:]))
+
+        # Processa distribuição de votos
+        dist_full = self._process_data(raw_votes)
+        if dist_full is None:
+            return None
+
+        # Descarta classes unknown e non-face
+        valid_dist = dist_full[:self.num_classes]
+        return (img_path, valid_dist, face_rc)
+
+    def _process_data(self, raw_votes):
+        # Copia e remove votos unitários
+        votes = np.array(raw_votes, dtype=float)
+        votes[votes <= 1.0 + sys.float_info.epsilon] = 0.0
+        total = votes.sum()
+        if total == 0:
+            return None
+
+        # Escolhe a estratégia
         if self.mode == 'majority':
-            maxval = max(emotion_raw)
-            if maxval > 0.5 * sum_list:
-                emotion[np.argmax(emotion_raw)] = maxval
-            else:
-                emotion = emotion_unknown
+            dist = self._pd_majority(votes)
         elif self.mode in ('probability', 'crossentropy'):
-            sum_part = 0
-            count = 0
-            valid_emotion = True
-            while sum_part < 0.75 * sum_list and count < 3 and valid_emotion:
-                maxval = max(emotion_raw)
-                for i in range(size):
-                    if emotion_raw[i] == maxval:
-                        emotion[i] = maxval
-                        emotion_raw[i] = 0
-                        sum_part += emotion[i]
-                        count += 1
-                        if i >= 8:  # unknown ou non-face
-                            valid_emotion = False
-                            if sum(emotion) > maxval:
-                                emotion[i] = 0
-                                count -= 1
-                            break
-            if sum(emotion) <= 0.5 * sum_list or count > 3:
-                emotion = emotion_unknown
+            dist = self._pd_probability(votes)
         elif self.mode == 'multi_target':
-            threshold = 0.3
-            for i in range(size):
-                if emotion_raw[i] >= threshold * sum_list:
-                    emotion[i] = emotion_raw[i]
-            if sum(emotion) <= 0.5 * sum_list:
-                emotion = emotion_unknown
+            dist = self._pd_multi_target(votes)
+        else:
+            raise ValueError(f"Modo inválido: {self.mode}")
 
-        # Filtra classes desconhecidas
-        emotion = emotion[:-2]
-        return [float(i)/sum(emotion) for i in emotion] if sum(emotion) > 0 else emotion
+        # Normaliza e remove as últimas 2 classes
+        return self._normalize_and_strip(dist)
 
+    def _pd_majority(self, votes):
+        maxv = votes.max()
+        total = votes.sum()
+        if maxv > 0.5 * total:
+            dist = np.zeros_like(votes)
+            dist[np.argmax(votes)] = maxv
+        else:
+            dist = self._unknown_dist(votes.shape[0])
+        return dist
+
+    def _pd_probability(self, votes):
+        # Lógica de probability/crossentropy original adaptada
+        dist = np.zeros_like(votes)
+        votes_copy = votes.copy()
+        total = votes_copy.sum()
+        sum_part = 0.0
+        count = 0
+        valid = True
+        # adiciona top-k até acumular 75% ou até 3
+        while sum_part < 0.75 * total and count < 3 and valid:
+            maxv = votes_copy.max()
+            idxs = np.where(votes_copy == maxv)[0]
+            for i in idxs:
+                if sum_part >= 0.75 * total or count >= 3:
+                    break
+                # descarta unknown/non-face
+                if i >= self.num_classes:
+                    valid = False
+                    break
+                dist[i] = maxv
+                votes_copy[i] = 0.0
+                sum_part += maxv
+                count += 1
+        if sum(dist) <= 0.5 * total or count == 0:
+            dist = self._unknown_dist(votes.shape[0])
+        return dist
+
+    def _pd_multi_target(self, votes):
+        threshold = 0.3 * votes.sum()
+        dist = np.where(votes >= threshold, votes, 0.0)
+        if dist.sum() <= 0.5 * votes.sum():
+            dist = self._unknown_dist(votes.shape[0])
+        return dist
+
+    def _unknown_dist(self, size):
+        d = np.zeros(size, dtype=float)
+        d[-2] = 1.0
+        return d
+
+    def _normalize_and_strip(self, dist):
+        total = dist.sum()
+        if total > 0:
+            dist = dist / total
+        # remove unknown e non-face
+        return dist[:-2]
 
     def _process_target(self, dist):
-        dist = np.array(dist, dtype=np.float32)
-
+        arr = np.array(dist, dtype=np.float32)
         if self.mode in ('majority', 'crossentropy'):
-            return dist
-
+            # one-hot
+            one_hot = np.zeros_like(arr)
+            one_hot[arr.argmax()] = 1.0
+            return torch.from_numpy(one_hot)
         elif self.mode == 'probability':
-            valid_indices = np.where(dist > 0)[0]
-
-            if len(valid_indices) == 0:
-                # fallback: escolhe uniformemente entre todas as classes
-                idx = np.random.choice(len(dist))
-            else:
-                filtered = dist[valid_indices]
-                p = filtered / np.sum(filtered)
-                idx = np.random.choice(valid_indices, p=p)
-
-            target = np.zeros(len(dist), dtype=np.float32)
-            target[idx] = 1.0
-            return target
-
+            idx = np.random.choice(len(arr), p=arr)
+            one_hot = np.zeros_like(arr)
+            one_hot[idx] = 1.0
+            return torch.from_numpy(one_hot)
         else:  # multi_target
-            arr = dist.copy()
-            arr[arr > 0] = 1.0
-            eps = 0.001
-            return (1 - eps) * arr + eps * np.ones_like(arr)
+            mask = np.where(arr > 0, 1.0, 0.0)
+            eps = 1e-3
+            soft = (1 - eps) * mask + eps
+            return torch.from_numpy(soft.astype(np.float32))
 
-    def __len__(self): return len(self.data)
+    def plot_class_distribution(self, writer, step=0):
+        """
+        Plota a distribuição de classes (rótulo majoritário) e registra no TensorBoard.
+
+        Args:
+            writer (SummaryWriter): instância do TensorBoard writer.
+            step (int): passo global para registro.
+        """
+        from collections import Counter
+        import matplotlib.pyplot as plt
+        from io import BytesIO
+        from PIL import Image as PILImage
+
+        # Extrai rótulo majoritário de cada exemplo
+        labels = [dist.argmax() for _, dist, _ in self.data]
+        counts = Counter(labels)
+        classes = [f'c{i}' for i in range(self.num_classes)]
+        values = [counts.get(i, 0) for i in range(self.num_classes)]
+
+        # Gera gráfico
+        plt.figure(figsize=(8, 4))
+        plt.bar(classes, values)
+        plt.xlabel('Classe')
+        plt.ylabel('Contagem')
+        plt.title('Distribuição de Classes')
+        plt.tight_layout()
+
+        # Salva em buffer e registra no TensorBoard
+        buf = BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        img = np.array(PILImage.open(buf))
+        writer.add_image('Class Distribution', img, global_step=step, dataformats='HWC')
+        plt.close()
+
+    def __len__(self):
+        return len(self.data)
 
     def __getitem__(self, idx):
         img_path, dist, face_rc = self.data[idx]
-        img = Image.open(img_path); img.load()
-        aug = imgu.distort_img(img, face_rc,
+        # Abre imagem com robustez
+        try:
+            img = Image.open(img_path) 
+            img.load()
+        except Exception as e:
+            logging.error(f"Erro ao abrir {img_path}: {e}")
+            return self.__getitem__((idx + 1) % len(self))
+
+        # Aplica distorção e pré-processamento
+        img = imgu.distort_img(
+            img, face_rc,
             self.width, self.height,
-            self.max_shift, self.max_scale,
-            self.max_angle, self.max_skew, self.do_flip)
-        proc = imgu.preproc_img(aug, A=self.A, A_pinv=self.A_pinv)
-        # garante shape [C,H,W]
-        arr=proc if proc.ndim==3 else np.expand_dims(proc,0)
+            **self.aug_params
+        )
+        proc = imgu.preproc_img(img, A=self.A, A_pinv=self.A_pinv)
+
+        # Garante shape [C, H, W]
+        arr = proc if proc.ndim == 3 else np.expand_dims(proc, 0)
         tensor = torch.from_numpy(arr).float()
-        target = torch.from_numpy(self._process_target(dist)).long() if self.mode!='multi_target' else torch.from_numpy(self._process_target(dist)).float()
+        target = self._process_target(dist)
         return tensor, target
