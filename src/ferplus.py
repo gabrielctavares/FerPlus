@@ -29,15 +29,31 @@ def display_summary(train_data_reader, val_data_reader, test_data_reader):
 
 class FERPlusParameters():
     '''
-    Parâmetros do leitor FER+.
+    Parâmetros do leitor FER+
     '''
-    def __init__(self, target_size, width, height, training_mode = "majority", determinisitc = False, shuffle = True):
+    def __init__(self, target_size, width, height, training_mode = "majority", deterministic = False, shuffle = True,
+                 max_shift=0.08, max_scale=1.05, max_angle=20.0, max_skew=0.05, do_flip=True):
         self.target_size   = target_size
         self.width         = width
         self.height        = height
         self.training_mode = training_mode
-        self.determinisitc = determinisitc
+        self.deterministic = deterministic # Corrigido para 'deterministic'
         self.shuffle       = shuffle
+
+        # Parâmetros de aumento de dados (adicionados aqui)
+        # Se 'deterministic' for True, sobrescreve com valores para sem aumento
+        if self.deterministic:
+            self.max_shift = 0.0
+            self.max_scale = 1.0
+            self.max_angle = 0.0
+            self.max_skew = 0.0
+            self.do_flip = False
+        else:
+            self.max_shift = max_shift
+            self.max_scale = max_scale
+            self.max_angle = max_angle
+            self.max_skew = max_skew
+            self.do_flip = do_flip
                         
 class FERPlusDataset(Dataset):
     '''
