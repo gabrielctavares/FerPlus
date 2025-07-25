@@ -60,7 +60,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             degrees=params_train.max_angle,
             translate=(params_train.max_shift, params_train.max_shift),
             shear=params_train.max_skew * 180 / np.pi if params_train.max_skew else 0 # Shear em graus
-        ) if not params_train.determinisitc else transforms.Identity(),
+        ) if not params_train.deterministic else transforms.Identity(),
         transforms.RandomHorizontalFlip(p=0.5) if params_train.do_flip else transforms.Identity(),
         transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
         # Adicione normalização com mean/std se seu modelo foi treinado dessa forma (ex: ImageNet)
