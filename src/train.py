@@ -47,8 +47,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         'test':  'FER2013Test'
     }
     
-    params_train = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, determinisitc=False, shuffle=True)
-    params_val_test = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, determinisitc=True, shuffle=False)
+    params_train = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, deterministic=False, shuffle=True)
+    params_val_test = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, deterministic=True, shuffle=False)
 
     train_transforms = transforms.Compose([
         transforms.RandomResizedCrop(
