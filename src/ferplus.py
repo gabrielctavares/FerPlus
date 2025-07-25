@@ -1,244 +1,221 @@
+import sys
 import os
 import csv
-import sys
 import numpy as np
-import torch
-from torch.utils.data import Dataset
-from PIL import Image
 import logging
+import random as rnd
+from collections import namedtuple
 
-# Dependências externas (certifique-se que estes módulos estejam disponíveis)
+from PIL import Image
+
+import torch
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
 from rect_util import Rect
-import img_util as imgu
 
+def display_summary(train_data_reader, val_data_reader, test_data_reader):
+    '''
+    Resume os dados em um formato tabular.
+    '''
+    emotion_count = train_data_reader.emotion_count
+    emotin_header = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear', 'contempt']
+
+    logging.info("{0}\t{1}\t{2}\t{3}".format("".ljust(10), "Train", "Val", "Test"))
+    for index in range(emotion_count):
+        logging.info("{0}\t{1}\t{2}\t{3}".format(emotin_header[index].ljust(10), 
+                                                 train_data_reader.per_emotion_count[index], 
+                                                 val_data_reader.per_emotion_count[index], 
+                                                 test_data_reader.per_emotion_count[index]))
+
+class FERPlusParameters():
+    '''
+    Parâmetros do leitor FER+.
+    '''
+    def __init__(self, target_size, width, height, training_mode = "majority", determinisitc = False, shuffle = True):
+        self.target_size   = target_size
+        self.width         = width
+        self.height        = height
+        self.training_mode = training_mode
+        self.determinisitc = determinisitc
+        self.shuffle       = shuffle
+                        
 class FERPlusDataset(Dataset):
-    """
-    Dataset para FER+ com modos `majority`, `probability`, `crossentropy` e `multi_target`.
-    Refatorado para maior modularidade e robustez.
-
-    Inclui método para plotar e registrar a distribuição de classes no TensorBoard.
-    """
-    def __init__(
-        self,
-        folder_paths,
-        label_file_name,
-        num_classes,
-        width,
-        height,
-        mode='majority',
-        shuffle=True,
-        deterministic=False
-    ):
-        # Parâmetros básicos
-        self.folder_paths = folder_paths
+    '''
+    Um Dataset PyTorch personalizado para o conjunto de dados FER+,
+    agora com foco em `torchvision.transforms`.
+    '''
+    def __init__(self, base_folder, sub_folders, label_file_name, parameters, transform=None):
+        self.base_folder = base_folder
+        self.sub_folders = sub_folders
         self.label_file_name = label_file_name
-        self.num_classes = num_classes  # ignora classes unknown e non-face
-        self.width = width
-        self.height = height
-        self.mode = mode
-        self.shuffle = shuffle
+        self.emotion_count = parameters.target_size
+        self.width = parameters.width
+        self.height = parameters.height
+        self.shuffle = parameters.shuffle
+        self.training_mode = parameters.training_mode
+        self.transform = transform # Transformações TorchVision
 
-        # Parâmetros de augmentação
-        if deterministic:
-            self.aug_params = dict(max_shift=0.0, max_scale=1.0, max_angle=0.0, max_skew=0.0, flip=False)
-        else:
-            self.aug_params = dict(max_shift=0.02, max_scale=1.01, max_angle=5.0, max_skew=0.01, flip=False)
-
-        # Pré-cálculo da matriz de normalização geométrica
-        self.A, self.A_pinv = imgu.compute_norm_mat(width, height)
-
-        # Carrega dados em memória
-        self.data = self._load_data()
+        # Os parâmetros de aumento de dados do FERPlusParameters original
+        # serão mapeados para transforms do torchvision.
+        self.determinisitc = parameters.determinisitc
+        
+        self.data = [] 
+        self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64) 
+        
+        self._load_folders() 
         if self.shuffle:
-            np.random.shuffle(self.data)
-
-    def _load_data(self):
-        samples = []
-        for folder in self.folder_paths:
-            csv_path = os.path.join(folder, self.label_file_name)
-            with open(csv_path, newline='') as f:
-                reader = csv.reader(f)
-                # next(reader)  # descomente se houver cabeçalho
-                for row in reader:
-                    parsed = self._parse_csv_row(folder, row)
-                    if parsed is not None:
-                        samples.append(parsed)
-        return samples
-
-    def _parse_csv_row(self, folder, row):
-        # Monta caminho da imagem
-        img_path = os.path.join(folder, row[0])
-        if not os.path.isfile(img_path):
-            logging.warning(f"Arquivo não encontrado: {img_path}")
-            return None
-
-        # Extrai box e cria Rect
-        coords = row[1].strip('()').split(',')
-        face_rc = Rect(list(map(int, coords)))
-
-        # Votos brutos (float)
-        raw_votes = list(map(float, row[2:]))
-
-        # Processa distribuição de votos
-        dist_full = self._process_data(raw_votes)
-        if dist_full is None:
-            return None
-
-        # Descarta classes unknown e non-face
-        valid_dist = dist_full[:self.num_classes]
-        return (img_path, valid_dist, face_rc)
-
-    def _process_data(self, raw_votes):
-        # Copia e remove votos unitários
-        votes = np.array(raw_votes, dtype=float)
-        votes[votes <= 1.0 + sys.float_info.epsilon] = 0.0
-        total = votes.sum()
-        if total == 0:
-            return None
-
-        # Escolhe a estratégia
-        if self.mode == 'majority':
-            dist = self._pd_majority(votes)
-        elif self.mode in ('probability', 'crossentropy'):
-            dist = self._pd_probability(votes)
-        elif self.mode == 'multi_target':
-            dist = self._pd_multi_target(votes)
-        else:
-            raise ValueError(f"Modo inválido: {self.mode}")
-
-        # Normaliza e remove as últimas 2 classes
-        return self._normalize_and_strip(dist)
-
-    def _pd_majority(self, votes):
-        maxv = votes.max()
-        total = votes.sum()
-        if maxv > 0.5 * total:
-            dist = np.zeros_like(votes)
-            dist[np.argmax(votes)] = maxv
-        else:
-            dist = self._unknown_dist(votes.shape[0])
-        return dist
-
-    def _pd_probability(self, votes):
-        # Lógica de probability/crossentropy original adaptada
-        dist = np.zeros_like(votes)
-        votes_copy = votes.copy()
-        total = votes_copy.sum()
-        sum_part = 0.0
-        count = 0
-        valid = True
-        # adiciona top-k até acumular 75% ou até 3
-        while sum_part < 0.75 * total and count < 3 and valid:
-            maxv = votes_copy.max()
-            idxs = np.where(votes_copy == maxv)[0]
-            for i in idxs:
-                if sum_part >= 0.75 * total or count >= 3:
-                    break
-                # descarta unknown/non-face
-                if i >= self.num_classes:
-                    valid = False
-                    break
-                dist[i] = maxv
-                votes_copy[i] = 0.0
-                sum_part += maxv
-                count += 1
-        if sum(dist) <= 0.5 * total or count == 0:
-            dist = self._unknown_dist(votes.shape[0])
-        return dist
-
-    def _pd_multi_target(self, votes):
-        threshold = 0.3 * votes.sum()
-        dist = np.where(votes >= threshold, votes, 0.0)
-        if dist.sum() <= 0.5 * votes.sum():
-            dist = self._unknown_dist(votes.shape[0])
-        return dist
-
-    def _unknown_dist(self, size):
-        d = np.zeros(size, dtype=float)
-        d[-2] = 1.0
-        return d
-
-    def _normalize_and_strip(self, dist):
-        total = dist.sum()
-        if total > 0:
-            dist = dist / total
-        dist = dist[:-2]
-        if dist.sum() == 0:
-            dist[0] = 1.0  # força como classe 0 apenas se necessário
-        return dist
-
-    def _process_target(self, dist):
-        arr = np.array(dist, dtype=np.float32)
-        if self.mode in ('majority', 'crossentropy'):
-            return torch.tensor(int(arr.argmax()), dtype=torch.long)  
-        elif self.mode == 'probability':
-            idx = np.random.choice(len(arr), p=arr)
-            return torch.tensor(idx, dtype=torch.long)
-        else:  # multi_target
-            mask = np.where(arr > 0, 1.0, 0.0)
-            eps = 1e-3
-            soft = (1 - eps) * mask + eps
-            return torch.from_numpy(soft.astype(np.float32))
-
-    def plot_class_distribution(self, writer, step=0):
-        """
-        Plota a distribuição de classes (rótulo majoritário) e registra no TensorBoard.
-
-        Args:
-            writer (SummaryWriter): instância do TensorBoard writer.
-            step (int): passo global para registro.
-        """
-        from collections import Counter
-        import matplotlib.pyplot as plt
-        from io import BytesIO
-        from PIL import Image as PILImage
-
-        # Extrai rótulo majoritário de cada exemplo
-        labels = [dist.argmax() for _, dist, _ in self.data]
-        counts = Counter(labels)
-        classes = [f'c{i}' for i in range(self.num_classes)]
-        values = [counts.get(i, 0) for i in range(self.num_classes)]
-
-        # Gera gráfico
-        plt.figure(figsize=(8, 4))
-        plt.bar(classes, values)
-        plt.xlabel('Classe')
-        plt.ylabel('Contagem')
-        plt.title('Distribuição de Classes')
-        plt.tight_layout()
-
-        # Salva em buffer e registra no TensorBoard
-        buf = BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        img = np.array(PILImage.open(buf))
-        writer.add_image('Class Distribution', img, global_step=step, dataformats='HWC')
-        plt.close()
+            rnd.shuffle(self.data) 
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        img_path, dist, face_rc = self.data[idx]
-        # Abre imagem com robustez
-        try:
-            img = Image.open(img_path).convert("L") 
-            img.load()
-        except Exception as e:
-            logging.error(f"Erro ao abrir {img_path}: {e}")
-            return self.__getitem__((idx + 1) % len(self))
+        image_path, emotion_labels, face_rc_box = self.data[idx] # face_rc_box é a lista [l,t,r,b]
 
-        # Aplica distorção e pré-processamento
-        img = imgu.distort_img(
-            img, face_rc,
-            self.width, self.height,
-            **self.aug_params
-        )
-        proc = imgu.preproc_img(img, A=self.A, A_pinv=self.A_pinv)
+        # Carrega a imagem do disco como PIL Image e a converte para escala de cinza
+        image = Image.open(image_path).convert('L') 
+        
+        # OFERECER DUAS ABORDAGENS para o recorte da face:
+        # ABORDAGEM 1: Recorte manual (mais próximo do original se Rect fosse crucial para o recorte)
+        # left, top, right, bottom = face_rc_box
+        # cropped_image = image.crop((left, top, right, bottom))
+        # image_to_transform = cropped_image
+        
+        # ABORDAGEM 2: Se a bounding box é apenas para informação, e o dataset já tem faces centralizadas/recortadas,
+        # ou se queremos que o modelo aprenda a ignorar o fundo (menos provável para FER+).
+        # Para FER+, o dataset já é de faces recortadas, então basta redimensionar.
+        image_to_transform = image
 
-        # Garante shape [C, H, W]
-        arr = proc if proc.ndim == 3 else np.expand_dims(proc, 0)
-        tensor = torch.from_numpy(arr).float()
-        target = self._process_target(dist)
-        print(f"Target: {target}")
-        return tensor, target
+        # Aplica as transformações do TorchVision
+        if self.transform:
+            image_tensor = self.transform(image_to_transform)
+        else:
+            # Se nenhuma transformação for fornecida, ainda precisamos de ToTensor e normalização básica
+            # para converter a imagem PIL para um tensor PyTorch.
+            image_tensor = transforms.Compose([
+                transforms.Resize((self.height, self.width)), # Redimensiona para o tamanho alvo
+                transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
+            ])(image_to_transform)
+
+        # Processa os rótulos de destino
+        target = self._process_target(emotion_labels)
+        target_tensor = torch.tensor(target, dtype=torch.float32)
+
+        return image_tensor, target_tensor
+            
+    def _load_folders(self):
+        for folder_name in self.sub_folders: 
+            logging.info(f"Carregando {os.path.join(self.base_folder, folder_name)}")
+            folder_path = os.path.join(self.base_folder, folder_name)
+            in_label_path = os.path.join(folder_path, self.label_file_name)
+            with open(in_label_path) as csvfile: 
+                emotion_label = csv.reader(csvfile) 
+                # Pula o cabeçalho do CSV se houver um
+                # next(emotion_label, None) 
+                for row in emotion_label: 
+                    image_path = os.path.join(folder_path, row[0])
+                    
+                    # A bounding box será uma lista de ints, não um objeto Rect aqui.
+                    face_rc_box = list(map(int, row[1][1:-1].split(',')))
+
+                    emotion_raw = list(map(float, row[2:len(row)]))
+                    emotion = self._process_data(emotion_raw, self.training_mode) 
+                    
+                    # A indexação de emoções deve ser cuidadosamente verificada.
+                    # As emoções originais do FER+ são:
+                    # 0: neutral, 1: happiness, 2: surprise, 3: sadness, 4: anger, 5: disgust, 6: fear, 7: contempt
+                    # 8: unknown, 9: non-face
+                    # Se target_size=8, estamos focando nas 8 primeiras.
+                    # As emoções 'unknown' e 'non-face' são tratadas no _process_data
+                    # e removidas antes de adicionar ao self.data se a emoção principal
+                    # não for uma das 8 básicas.
+                    
+                    # Encontra o índice da emoção com maior voto APÓS o _process_data (que já filtra)
+                    idx_most_voted = np.argmax(emotion)
+
+                    # Se a emoção mais votada não for 'unknown' ou 'non-face' (últimos dois índices)
+                    if idx_most_voted < (len(emotion) - 2): 
+                        # Remove 'unknown' e 'non-face' das emoções finais a serem armazenadas
+                        emotion_final = emotion[:-2] 
+                        # Normaliza as probabilidades para que somem 1
+                        sum_emotion_final = sum(emotion_final)
+                        if sum_emotion_final > 0:
+                            emotion_final = [float(i)/sum_emotion_final for i in emotion_final]
+                        else:
+                            emotion_final = [0.0] * self.emotion_count # Se a soma for 0, todas são 0
+                        
+                        self.data.append((image_path, emotion_final, face_rc_box))
+                        # Conta apenas as 8 emoções principais
+                        self.per_emotion_count[idx_most_voted] += 1
+            
+    def _process_target(self, target):
+        # Esta função permanece a mesma, pois lida com a lógica dos rótulos
+        if self.training_mode == 'majority' or self.training_mode == 'crossentropy': 
+            return target
+        elif self.training_mode == 'probability': 
+            idx       = np.random.choice(len(target), p=target) 
+            new_target      = np.zeros_like(target)
+            new_target[idx] = 1.0
+            return new_target
+        elif self.training_mode == 'multi_target': 
+            new_target = np.array(target) 
+            new_target[new_target>0] = 1.0
+            epsilon = 0.001       
+            return (1-epsilon)*new_target + epsilon*np.ones_like(target)
+
+    def _process_data(self, emotion_raw, mode):
+        # Esta função permanece a mesma em sua lógica, pois decide como interpretar os votos brutos
+        size = len(emotion_raw) # Inclui 'unknown' e 'non-face' aqui
+        emotion_unknown       = [0.0] * size
+        emotion_unknown[-2] = 1.0 
+
+        for i in range(size):
+            if emotion_raw[i] < 1.0 + sys.float_info.epsilon:
+                emotion_raw[i] = 0.0
+
+        sum_list = sum(emotion_raw)
+        emotion = [0.0] * size 
+
+        if mode == 'majority': 
+            maxval = max(emotion_raw) 
+            if maxval > 0.5*sum_list: 
+                emotion[np.argmax(emotion_raw)] = maxval 
+            else: 
+                emotion = emotion_unknown   
+        elif (mode == 'probability') or (mode == 'crossentropy'):
+            sum_part = 0
+            count = 0
+            valid_emotion = True
+            temp_emotion_raw = list(emotion_raw) 
+            while sum_part < 0.75*sum_list and count < 3 and valid_emotion:
+                maxval = max(temp_emotion_raw) 
+                if maxval == 0: 
+                    break
+                for i in range(size): 
+                    if temp_emotion_raw[i] == maxval: 
+                        emotion[i] = maxval
+                        temp_emotion_raw[i] = 0 
+                        sum_part += emotion[i]
+                        count += 1
+                        if i >= (self.emotion_count): # Se a emoção mais votada é unknown ou non-face (aqui self.emotion_count já é 8)
+                            valid_emotion = False
+                            if sum(emotion) > maxval:    
+                                emotion[i] = 0
+                                count -= 1
+                            break
+            if sum(emotion) <= 0.5*sum_list or count > 3: 
+                emotion = emotion_unknown   
+        elif mode == 'multi_target':
+            threshold = 0.3
+            for i in range(size): 
+                if emotion_raw[i] >= threshold*sum_list: 
+                    emotion[i] = emotion_raw[i] 
+            if sum(emotion) <= 0.5 * sum_list: 
+                emotion = emotion_unknown   
+                                        
+        current_sum = sum(emotion)
+        if current_sum > 0:
+            return [float(i)/current_sum for i in emotion]
+        else:
+            return [0.0] * size
+

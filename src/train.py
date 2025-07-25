@@ -6,10 +6,12 @@ from torch import optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import torch.nn.functional as F
 import argparse
 
-from ferplus import FERPlusDataset
+from ferplus import FERPlusDataset, FERPlusParameters
 from models import build_model  
+from torchvision import transforms
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
@@ -22,62 +24,83 @@ emotion_table = {
     'anger': 4, 'disgust': 5, 'fear': 6, 'contempt': 7
 }
 
-def cost_func(mode, outputs, targets):
-    if torch.any(torch.isnan(outputs)):
-        logging.warning("⚠️ Outputs contém NaN!")
-    if torch.any(torch.isnan(targets)):
-        logging.warning("⚠️ Targets contém NaN!")
 
-    if mode == 'multi_target':
-        targets_smoothed = targets + 1e-9
-        probs = torch.softmax(outputs, dim=1)
-        weighted_probs = probs * targets_smoothed
-        max_vals, _ = torch.max(weighted_probs, dim=1)
-        perda = -torch.log(max_vals).mean()
-        logging.info(f"[Multi-target] Loss: {perda.item():.4f}")
-        return perda
+def cost_func(training_mode, prediction_logits, target):
+    if training_mode in ['majority', 'probability', 'crossentropy']:
+        labels = torch.argmax(target, dim=1)
+        return F.cross_entropy(prediction_logits, labels)  # melhor usar F.* do que nn.*() aqui
+    elif training_mode == 'multi_target':
+        pred_probs = F.softmax(prediction_logits, dim=1)  # mais idiomático que nn.Softmax()
+        prod = pred_probs * target
+        loss = -torch.log(torch.max(prod, dim=1).values + 1e-8)
+        return loss.mean()
     else:
-        perda = torch.nn.CrossEntropyLoss()(outputs, targets)
-        logging.info(f"[CrossEntropy] Loss: {perda.item():.4f}")
-        return perda
+        raise ValueError(f"Modo de treinamento inválido: {training_mode}")
 
+
+  
 
 def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     paths = {
-        'train': os.path.join(base_folder, 'FER2013Train'),
-        'valid':   os.path.join(base_folder, 'FER2013Valid'),
-        'test':  os.path.join(base_folder, 'FER2013Test')
+        'train': 'FER2013Train',
+        'valid':   'FER2013Valid',
+        'test':  'FER2013Test'
     }
     
+    params_train = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, determinisitc=False, shuffle=True)
+    params_val_test = FERPlusParameters(target_size=len(emotion_table), width=48, height=48, training_mode=mode, determinisitc=True, shuffle=False)
+
+    train_transforms = transforms.Compose([
+        transforms.RandomResizedCrop(
+            (params_train.height, params_train.width), 
+            scale=(1.0 / params_train.max_scale, params_train.max_scale), # Mapeia max_scale para scale
+            ratio=(1.0 - params_train.max_skew, 1.0 + params_train.max_skew) # Mapeia max_skew para ratio
+        ),
+        transforms.RandomAffine(
+            degrees=params_train.max_angle,
+            translate=(params_train.max_shift, params_train.max_shift),
+            shear=params_train.max_skew * 180 / np.pi if params_train.max_skew else 0 # Shear em graus
+        ) if not params_train.determinisitc else transforms.Identity(),
+        transforms.RandomHorizontalFlip(p=0.5) if params_train.do_flip else transforms.Identity(),
+        transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
+        # Adicione normalização com mean/std se seu modelo foi treinado dessa forma (ex: ImageNet)
+        # transforms.Normalize(mean=[0.485], std=[0.229]) # Exemplo para imagens em escala de cinza, se aplicável
+    ])
+
+    # Para os conjuntos de validação e teste (sem aumentos, apenas redimensionamento e ToTensor)
+    val_test_transforms = transforms.Compose([
+        transforms.Resize((params_val_test.height, params_val_test.width)), # Garante o tamanho correto
+        transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
+        # transforms.Normalize(mean=[0.485], std=[0.229]) # Mesma normalização do treino
+    ])
+
     # TensorBoard
     writer = SummaryWriter(log_dir=f"runs/{model_name}_{mode}")
 
     ds = {
         k: FERPlusDataset(
-            folder_paths=[paths[k]],  # mantém lista se o dataset espera assim
-            label_file_name='label.csv',
-            num_classes=len(emotion_table),
-            width=64,
-            height=64,
-            mode=mode if k == 'train' else 'majority',
-            shuffle=(k == 'train'),
-            deterministic=(k != 'train')
+            base_folder=base_folder,
+            sub_folders=[paths[k]],
+            label_file_name="label.csv",
+            parameters=params_train if k == 'train' else params_val_test,
+            transform=train_transforms if k == 'train' else val_test_transforms
         )
         for k in paths
     }
 
 
         # Log de tamanho e distribuição
-    for split, dataset in ds.items():
-        logging.info(f"{split} size: {len(dataset)} samples")
-        if split == 'train':
-            dataset.plot_class_distribution(writer, step=0)
+    # for split, dataset in ds.items():
+    #     logging.info(f"{split} size: {len(dataset)} samples")
+    #     if split == 'train':
+    #         dataset.plot_class_distribution(writer, step=0)
 
    # DataLoaders
     num_workers = min(2, os.cpu_count() // 2)
+
     dl = {
         split: DataLoader(dataset, batch_size=bs, shuffle=(split=='train'),
-                          num_workers=num_workers, pin_memory=True)
+                          num_workers=num_workers)
         for split, dataset in ds.items()
     }
 
@@ -167,7 +190,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         for x, y in dl['test']:
             x, y = x.to(device), y.to(device)
             out = model(x)
-            test_correct += (out.argmax(1)==y.argmax(1)).sum().item()
+            val_y = y if y.ndim == 1 else y.argmax(dim=1)
+            test_correct += (out.argmax(1)==val_y).sum().item()
     test_acc = test_correct / len(ds['test'])
     logging.info(f"🏁 Test acc (best epoch {best_ep}): {test_acc:.4f}")
 
