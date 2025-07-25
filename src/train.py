@@ -12,6 +12,7 @@ import argparse
 from ferplus import FERPlusDataset, FERPlusParameters
 from models import build_model  
 from torchvision import transforms
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
