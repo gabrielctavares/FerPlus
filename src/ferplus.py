@@ -168,15 +168,10 @@ class FERPlusDataset(Dataset):
     def _process_target(self, dist):
         arr = np.array(dist, dtype=np.float32)
         if self.mode in ('majority', 'crossentropy'):
-            # one-hot
-            one_hot = np.zeros_like(arr)
-            one_hot[arr.argmax()] = 1.0
-            return torch.from_numpy(one_hot)
+            return torch.tensor(int(arr.argmax()), dtype=torch.long)  
         elif self.mode == 'probability':
             idx = np.random.choice(len(arr), p=arr)
-            one_hot = np.zeros_like(arr)
-            one_hot[idx] = 1.0
-            return torch.from_numpy(one_hot)
+            return torch.tensor(idx, dtype=torch.long)
         else:  # multi_target
             mask = np.where(arr > 0, 1.0, 0.0)
             eps = 1e-3
