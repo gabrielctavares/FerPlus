@@ -37,8 +37,7 @@ def cost_func(mode, outputs, targets):
         logging.info(f"[Multi-target] Loss: {perda.item():.4f}")
         return perda
     else:
-        idx = targets.argmax(dim=1)
-        perda = torch.nn.CrossEntropyLoss()(outputs, idx)
+        perda = torch.nn.CrossEntropyLoss()(outputs, targets)
         logging.info(f"[CrossEntropy] Loss: {perda.item():.4f}")
         return perda
 
