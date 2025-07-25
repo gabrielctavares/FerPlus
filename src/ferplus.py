@@ -73,7 +73,7 @@ class FERPlusDataset(Dataset):
 
         # Os parâmetros de aumento de dados do FERPlusParameters original
         # serão mapeados para transforms do torchvision.
-        self.determinisitc = parameters.determinisitc
+        self.deterministic = parameters.deterministic
         
         self.data = [] 
         self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64) 
