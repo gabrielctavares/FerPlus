@@ -11,7 +11,7 @@ import argparse
 from ferplus import FERPlusDataset
 from models import build_model  
 
-logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.info(f"Using device: {device}")
@@ -34,12 +34,12 @@ def cost_func(mode, outputs, targets):
         weighted_probs = probs * targets_smoothed
         max_vals, _ = torch.max(weighted_probs, dim=1)
         perda = -torch.log(max_vals).mean()
-        logging.debug(f"[Multi-target] Loss: {perda.item():.4f}")
+        logging.info(f"[Multi-target] Loss: {perda.item():.4f}")
         return perda
     else:
         idx = targets.argmax(dim=1)
         perda = torch.nn.CrossEntropyLoss()(outputs, idx)
-        logging.debug(f"[CrossEntropy] Loss: {perda.item():.4f}")
+        logging.info(f"[CrossEntropy] Loss: {perda.item():.4f}")
         return perda
 
 
@@ -103,7 +103,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             opt.zero_grad()
             out = model(x)
             loss = cost_func(mode, out, y)
-            logging.debug(f"Batch loss: {loss.item():.4f}")
+            logging.info(f"Batch loss: {loss.item():.4f}")
 
             if torch.isnan(loss):
                 logging.error("Loss is NaN, skipping batch")
@@ -121,8 +121,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             preds = out.argmax(dim=1)
             trues = y.argmax(dim=1) if mode!='multi_target' else y.argmax(dim=1)
 
-            logging.debug(f"Batch preds: {preds.tolist()}")
-            logging.debug(f"Batch trues: {trues.tolist()}")
+            logging.info(f"Batch preds: {preds.tolist()}")
+            logging.info(f"Batch trues: {trues.tolist()}")
 
             running_loss   += loss.item() * x.size(0)
             running_correct+= (preds==trues).sum().item()
