@@ -11,7 +11,7 @@ import argparse
 from ferplus import FERPlusDataset
 from models import build_model  
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] %(message)s')
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 logging.info(f"Using device: {device}")
@@ -123,7 +123,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
 
             logging.debug(f"Batch preds: {preds.tolist()}")
             logging.debug(f"Batch trues: {trues.tolist()}")
-            
+
             running_loss   += loss.item() * x.size(0)
             running_correct+= (preds==trues).sum().item()
             running_total  += x.size(0)
