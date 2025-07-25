@@ -118,7 +118,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             opt.step()
 
             preds = out.argmax(dim=1)
-            trues = y.argmax(dim=1) if mode!='multi_target' else y.argmax(dim=1)
+            trues = y if mode != 'multi_target' else y.argmax(dim=1)
 
             logging.info(f"Batch preds: {preds.tolist()}")
             logging.info(f"Batch trues: {trues.tolist()}")
