@@ -142,13 +142,13 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             opt.step()
 
             preds = out.argmax(dim=1)
-            trues = y if mode != 'multi_target' else y.argmax(dim=1)
+            trues_for_comparison = y.argmax(dim=1) if y.ndim > 1 else y
 
             logging.info(f"Batch preds: {preds.tolist()}")
-            logging.info(f"Batch trues: {trues.tolist()}")
+            logging.info(f"Batch trues: {trues_for_comparison.tolist()}")
 
             running_loss   += loss.item() * x.size(0)
-            running_correct+= (preds==trues).sum().item()
+            running_correct+= (preds==trues_for_comparison).sum().item()
             running_total  += x.size(0)
             
             # TensorBoard scalars (a cada batch)
@@ -171,7 +171,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             for x, y in dl['valid']:
                 x, y = x.to(device), y.to(device)
                 out = model(x)
-                val_y = y if y.ndim == 1 else y.argmax(dim=1)
+                val_y = y.argmax(dim=1) if y.ndim > 1 else y
                 val_correct += (out.argmax(1)==val_y).sum().item()
         val_acc = val_correct / len(ds['valid'])
         writer.add_scalar("Accuracy/Valid", val_acc, ep)
@@ -191,7 +191,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         for x, y in dl['test']:
             x, y = x.to(device), y.to(device)
             out = model(x)
-            val_y = y if y.ndim == 1 else y.argmax(dim=1)
+            val_y = y.argmax(dim=1) if y.ndim > 1 else y
             test_correct += (out.argmax(1)==val_y).sum().item()
     test_acc = test_correct / len(ds['test'])
     logging.info(f"🏁 Test acc (best epoch {best_ep}): {test_acc:.4f}")
