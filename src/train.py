@@ -147,7 +147,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             for x, y in dl['valid']:
                 x, y = x.to(device), y.to(device)
                 out = model(x)
-                val_correct += (out.argmax(1)==y.argmax(1)).sum().item()
+                val_y = y if y.ndim == 1 else y.argmax(dim=1)
+                val_correct += (out.argmax(1)==val_y).sum().item()
         val_acc = val_correct / len(ds['valid'])
         writer.add_scalar("Accuracy/Valid", val_acc, ep)
         logging.info(f"Train loss: {train_loss:.4f}, acc: {train_acc:.4f} | Valid acc: {val_acc:.4f} | time: {time.time()-t0:.1f}s")

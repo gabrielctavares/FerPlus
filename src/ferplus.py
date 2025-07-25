@@ -42,7 +42,7 @@ class FERPlusDataset(Dataset):
         if deterministic:
             self.aug_params = dict(max_shift=0.0, max_scale=1.0, max_angle=0.0, max_skew=0.0, flip=False)
         else:
-            self.aug_params = dict(max_shift=0.08, max_scale=1.05, max_angle=20.0, max_skew=0.05, flip=True)
+            self.aug_params = dict(max_shift=0.02, max_scale=1.01, max_angle=5.0, max_skew=0.01, flip=False)
 
         # Pré-cálculo da matriz de normalização geométrica
         self.A, self.A_pinv = imgu.compute_norm_mat(width, height)
@@ -162,8 +162,10 @@ class FERPlusDataset(Dataset):
         total = dist.sum()
         if total > 0:
             dist = dist / total
-        # remove unknown e non-face
-        return dist[:-2]
+        dist = dist[:-2]
+        if dist.sum() == 0:
+            dist[0] = 1.0  # força como classe 0 apenas se necessário
+        return dist
 
     def _process_target(self, dist):
         arr = np.array(dist, dtype=np.float32)
@@ -220,7 +222,7 @@ class FERPlusDataset(Dataset):
         img_path, dist, face_rc = self.data[idx]
         # Abre imagem com robustez
         try:
-            img = Image.open(img_path) 
+            img = Image.open(img_path).convert("L") 
             img.load()
         except Exception as e:
             logging.error(f"Erro ao abrir {img_path}: {e}")
@@ -238,4 +240,5 @@ class FERPlusDataset(Dataset):
         arr = proc if proc.ndim == 3 else np.expand_dims(proc, 0)
         tensor = torch.from_numpy(arr).float()
         target = self._process_target(dist)
+        print(f"Target: {target}")
         return tensor, target
