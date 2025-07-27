@@ -13,6 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from rect_util import Rect
 
+import image_util as imgu
 def display_summary(train_data_reader, val_data_reader, test_data_reader):
     '''
     Resume os dados em um formato tabular.
