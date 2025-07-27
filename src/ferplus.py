@@ -98,7 +98,7 @@ class FERPlusDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        image_path, label_dist = self.data[idx]
+        image_path, label_dist, _ = self.data[idx]
         image = Image.open(image_path).convert('L')
         tensor = self.transform(image)  # [1, H, W]
 
