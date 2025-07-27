@@ -82,7 +82,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             sub_folders=[paths[k]],
             label_file_name="label.csv",
             parameters=params_train if k == 'train' else params_val_test,
-            transform=train_transforms if k == 'train' else val_test_transforms
+            #transform=train_transforms if k == 'train' else val_test_transforms
         )
         for k in paths
     }
@@ -99,7 +99,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
 
     dl = {
         split: DataLoader(dataset, batch_size=bs, shuffle=(split=='train'),
-                          num_workers=num_workers)
+                          num_workers=num_workers, pin_memory=True)
         for split, dataset in ds.items()
     }
 

@@ -15,7 +15,7 @@ class VGG13(nn.Module):
     """
     @property
     def learning_rate(self):
-        return 0.01
+        return 0.05
         
     @property
     def input_width(self):

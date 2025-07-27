@@ -85,39 +85,53 @@ class FERPlusDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
+
     def __getitem__(self, idx):
-        image_path, emotion_labels, face_rc_box = self.data[idx] # face_rc_box é a lista [l,t,r,b]
+        img = Image.open(img_path)  # carrega PIL
+        img.load()
+        # usa a versão antiga de distort_img + preproc_img, que é vetorizada em NumPy
+        aug = imgu.distort_img(img, face_rc, self.width, self.height,
+                            self.max_shift, self.max_scale,
+                            self.max_angle, self.max_skew, self.do_flip)
+        proc = imgu.preproc_img(aug, A=self.A, A_pinv=self.A_pinv)
+        tensor = torch.from_numpy(proc).float()
+        # …
+        return tensor, target_tensor
 
-        # Carrega a imagem do disco como PIL Image e a converte para escala de cinza
-        image = Image.open(image_path).convert('L') 
+
+    # def __getitem__(self, idx):
+    #     image_path, emotion_labels, face_rc_box = self.data[idx] # face_rc_box é a lista [l,t,r,b]
+
+    #     # Carrega a imagem do disco como PIL Image e a converte para escala de cinza
+    #     image = Image.open(image_path).convert('L') 
         
-        # OFERECER DUAS ABORDAGENS para o recorte da face:
-        # ABORDAGEM 1: Recorte manual (mais próximo do original se Rect fosse crucial para o recorte)
-        # left, top, right, bottom = face_rc_box
-        # cropped_image = image.crop((left, top, right, bottom))
-        # image_to_transform = cropped_image
+    #     # OFERECER DUAS ABORDAGENS para o recorte da face:
+    #     # ABORDAGEM 1: Recorte manual (mais próximo do original se Rect fosse crucial para o recorte)
+    #     # left, top, right, bottom = face_rc_box
+    #     # cropped_image = image.crop((left, top, right, bottom))
+    #     # image_to_transform = cropped_image
         
-        # ABORDAGEM 2: Se a bounding box é apenas para informação, e o dataset já tem faces centralizadas/recortadas,
-        # ou se queremos que o modelo aprenda a ignorar o fundo (menos provável para FER+).
-        # Para FER+, o dataset já é de faces recortadas, então basta redimensionar.
-        image_to_transform = image
+    #     # ABORDAGEM 2: Se a bounding box é apenas para informação, e o dataset já tem faces centralizadas/recortadas,
+    #     # ou se queremos que o modelo aprenda a ignorar o fundo (menos provável para FER+).
+    #     # Para FER+, o dataset já é de faces recortadas, então basta redimensionar.
+    #     image_to_transform = image
 
-        # Aplica as transformações do TorchVision
-        if self.transform:
-            image_tensor = self.transform(image_to_transform)
-        else:
-            # Se nenhuma transformação for fornecida, ainda precisamos de ToTensor e normalização básica
-            # para converter a imagem PIL para um tensor PyTorch.
-            image_tensor = transforms.Compose([
-                transforms.Resize((self.height, self.width)), # Redimensiona para o tamanho alvo
-                transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
-            ])(image_to_transform)
+    #     # Aplica as transformações do TorchVision
+    #     if self.transform:
+    #         image_tensor = self.transform(image_to_transform)
+    #     else:
+    #         # Se nenhuma transformação for fornecida, ainda precisamos de ToTensor e normalização básica
+    #         # para converter a imagem PIL para um tensor PyTorch.
+    #         image_tensor = transforms.Compose([
+    #             transforms.Resize((self.height, self.width)), # Redimensiona para o tamanho alvo
+    #             transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
+    #         ])(image_to_transform)
 
-        # Processa os rótulos de destino
-        target = self._process_target(emotion_labels)
-        target_tensor = torch.tensor(target, dtype=torch.float32)
+    #     # Processa os rótulos de destino
+    #     target = self._process_target(emotion_labels)
+    #     target_tensor = torch.tensor(target, dtype=torch.float32)
 
-        return image_tensor, target_tensor
+    #     return image_tensor, target_tensor
             
     def _load_folders(self):
         for folder_name in self.sub_folders: 
