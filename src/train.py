@@ -108,7 +108,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     lr = getattr(model, "learning_rate", 0.01)
     #opt = optim.SGD(model.parameters(), lr=lr, momentum=0.9)\
     opt = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    scheduler = optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.5)
+    # scheduler = optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.5)
 
     best_val, best_ep = 0.0, 0
     best_model_path = f"{model_name}_{mode}.pth"
@@ -132,6 +132,10 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             preds = out.argmax(dim=1)
             trues = y.argmax(dim=1)
 
+            # se ta no ultimo repeticao, loga as previsoes e os valores verdadeiros
+            if len(dl['train']) - 1 == i:
+                logging.info(f"Batch {ep}/{epochs} - preds: {preds.tolist()}, trues: {trues.tolist()}")
+                
             #logging.info(f"Batch preds: {preds.tolist()}")
             #logging.info(f"Batch trues: {trues.tolist()}")
 
@@ -144,7 +148,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             #global_step += 1
 
         # Scheduler por época
-        scheduler.step()
+        # scheduler.step()
 
         # Métricas de época
         train_loss = running_loss / running_total
