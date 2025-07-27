@@ -56,47 +56,61 @@ class FERPlusParameters():
             self.do_flip = do_flip
                         
 class FERPlusDataset(Dataset):
-    '''
-    Um Dataset PyTorch personalizado para o conjunto de dados FER+,
-    agora com foco em `torchvision.transforms`.
-    '''
-    def __init__(self, base_folder, sub_folders, label_file_name, parameters, transform=None):
-        self.base_folder = base_folder
-        self.sub_folders = sub_folders
+    def __init__(self, base_folder, sub_folders, label_file_name,
+                 parameters: FERPlusParameters, transform=None):
+        self.base_folder     = base_folder
+        self.sub_folders     = sub_folders
         self.label_file_name = label_file_name
-        self.emotion_count = parameters.target_size
-        self.width = parameters.width
-        self.height = parameters.height
-        self.shuffle = parameters.shuffle
-        self.training_mode = parameters.training_mode
-        self.transform = transform # Transformações TorchVision
+        self.width           = parameters.width
+        self.height          = parameters.height
+        self.shuffle         = parameters.shuffle
+        self.mode            = parameters.training_mode
+        self.transform       = transform
+        self.deterministic   = parameters.deterministic
 
-        # Os parâmetros de aumento de dados do FERPlusParameters original
-        # serão mapeados para transforms do torchvision.
-        self.deterministic = parameters.deterministic
-        
-        self.data = [] 
-        self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64) 
-        
-        self._load_folders() 
+        # pré-calcula matrizes de normalização (como no código antigo)
+        self.A, self.A_pinv = imgu.compute_norm_mat(self.width, self.height)
+
+        # parâmetros de distorção
+        self.max_shift = parameters.max_shift
+        self.max_scale = parameters.max_scale
+        self.max_angle = parameters.max_angle
+        self.max_skew  = parameters.max_skew
+        self.do_flip   = parameters.do_flip
+
+        self.emotion_count       = parameters.target_size
+        self.data                = []
+        self.per_emotion_count   = np.zeros(self.emotion_count, dtype=np.int64)
+        self._load_folders()
         if self.shuffle:
-            rnd.shuffle(self.data) 
+            rnd.shuffle(self.data)
+
 
     def __len__(self):
         return len(self.data)
 
 
     def __getitem__(self, idx):
-        image_path, emotion_labels, face_rc_box = self.data[idx]
-        img = Image.open(img_path)  # carrega PIL
+        image_path, label_dist, face_rc_box = self.data[idx]
+        # abre e distorce com NumPy/C
+        img = Image.open(image_path)
         img.load()
-        # usa a versão antiga de distort_img + preproc_img, que é vetorizada em NumPy
-        aug = imgu.distort_img(img, face_rc, self.width, self.height,
-                            self.max_shift, self.max_scale,
-                            self.max_angle, self.max_skew, self.do_flip)
+        aug = imgu.distort_img(
+            img, Rect(face_rc_box),
+            self.width, self.height,
+            self.max_shift, self.max_scale,
+            self.max_angle, self.max_skew, self.do_flip
+        )
         proc = imgu.preproc_img(aug, A=self.A, A_pinv=self.A_pinv)
         tensor = torch.from_numpy(proc).float()
-        # …
+
+        # se houver transform TorchVision, aplica por cima
+        if self.transform:
+            tensor = self.transform(tensor)
+
+        # target
+        target = self._process_target(label_dist)
+        target_tensor = torch.tensor(target, dtype=torch.float32)
         return tensor, target_tensor
 
 
