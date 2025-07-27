@@ -87,6 +87,7 @@ class FERPlusDataset(Dataset):
 
 
     def __getitem__(self, idx):
+        image_path, emotion_labels, face_rc_box = self.data[idx]
         img = Image.open(img_path)  # carrega PIL
         img.load()
         # usa a versão antiga de distort_img + preproc_img, que é vetorizada em NumPy
