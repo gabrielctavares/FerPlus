@@ -54,18 +54,16 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     train_transforms = transforms.Compose([
         transforms.RandomResizedCrop(
             (params_train.height, params_train.width), 
-            scale=(1.0 / params_train.max_scale, params_train.max_scale), # Mapeia max_scale para scale
-            ratio=(1.0 - params_train.max_skew, 1.0 + params_train.max_skew) # Mapeia max_skew para ratio
+            scale=(1.0 / params_train.max_scale, params_train.max_scale)
+            # REMOVIDO: ratio=(1.0 - params_train.max_skew, 1.0 + params_train.max_skew)
         ),
         transforms.RandomAffine(
             degrees=params_train.max_angle,
             translate=(params_train.max_shift, params_train.max_shift),
-            shear=params_train.max_skew * 180 / np.pi if params_train.max_skew else 0 # Shear em graus
+            shear=params_train.max_skew * 180 / np.pi if params_train.max_skew else 0
         ) if not params_train.deterministic else transforms.Identity(),
         transforms.RandomHorizontalFlip(p=0.5) if params_train.do_flip else transforms.Identity(),
-        transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
-        # Adicione normalização com mean/std se seu modelo foi treinado dessa forma (ex: ImageNet)
-        # transforms.Normalize(mean=[0.485], std=[0.229]) # Exemplo para imagens em escala de cinza, se aplicável
+        transforms.ToTensor(),
     ])
 
     # Para os conjuntos de validação e teste (sem aumentos, apenas redimensionamento e ToTensor)
@@ -141,8 +139,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             running_total  += x.size(0)
             
             # TensorBoard scalars (a cada batch)
-            writer.add_scalar("Loss/Train_batch", loss.item(), global_step)
-            global_step += 1
+           # writer.add_scalar("Loss/Train_batch", loss.item(), global_step)
+            #global_step += 1
 
         # Scheduler por época
         scheduler.step()
