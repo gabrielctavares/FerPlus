@@ -120,7 +120,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         running_loss, running_correct, running_total = 0.0, 0, 0
 
         logging.info(f"--- Epoch {ep}/{epochs} ---")
-        for x, y in tqdm(dl['train'], desc="Train"):
+        for batch_idx, (x, y) in enumerate(tqdm(dl['train'], desc="Train")):
             x, y = x.to(device), y.to(device)
             opt.zero_grad()
             out = model(x)
@@ -133,9 +133,10 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             trues = y.argmax(dim=1)
 
             # se ta no ultimo repeticao, loga as previsoes e os valores verdadeiros
-            if len(dl['train']) - 1 == i:
-                logging.info(f"Batch {ep}/{epochs} - preds: {preds.tolist()}, trues: {trues.tolist()}")
-                
+            if batch_idx == len(dl['train']) - 1:
+                logging.info(f"Epoch {ep}/{epochs}, Batch {batch_idx+1}/{len(dl['train'])} — " 
+                    f"preds: {preds.tolist()}, trues: {trues.tolist()}")
+
             #logging.info(f"Batch preds: {preds.tolist()}")
             #logging.info(f"Batch trues: {trues.tolist()}")
 
