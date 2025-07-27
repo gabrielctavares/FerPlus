@@ -126,7 +126,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             opt.zero_grad()
             out = model(x)
             loss = cost_func(mode, out, y)
-            logging.info(f"Batch loss: {loss.item():.4f}")            
+            #logging.info(f"Batch loss: {loss.item():.4f}")            
             loss.backward()
             opt.step()
 
