@@ -29,7 +29,7 @@ emotion_table = {
 def cost_func(training_mode, prediction_logits, target):
     if training_mode in ['majority', 'probability', 'crossentropy']:
         labels = torch.argmax(target, dim=1)
-        return F.cross_entropy(prediction_logits, labels)  # melhor usar F.* do que nn.*() aqui
+        return F.cross_entropy(prediction_logits, labels, label_smoothing=0.1)  # melhor usar F.* do que nn.*() aqui
     elif training_mode == 'multi_target':
         pred_probs = F.softmax(prediction_logits, dim=1)  # mais idiomático que nn.Softmax()
         prod = pred_probs * target
@@ -95,7 +95,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     #         dataset.plot_class_distribution(writer, step=0)
 
    # DataLoaders
-    num_workers = max(4, os.cpu_count())
+    num_workers = 4
 
     dl = {
         split: DataLoader(dataset, batch_size=bs, shuffle=(split=='train'),
@@ -106,7 +106,8 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     # Modelo, otimizador e scheduler
     model = build_model(len(emotion_table), model_name).to(device)
     lr = getattr(model, "learning_rate", 0.01)
-    opt = optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+    #opt = optim.SGD(model.parameters(), lr=lr, momentum=0.9)\
+    opt = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.5)
 
     best_val, best_ep = 0.0, 0
