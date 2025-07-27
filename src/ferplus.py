@@ -69,6 +69,13 @@ class FERPlusDataset(Dataset):
         self.transform       = transform
         self.deterministic   = parameters.deterministic
 
+
+        self.transform = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize((self.height, self.width)),
+            transforms.ToTensor(),
+        ])
+
         # pré-calcula matrizes de normalização (como no código antigo)
         self.A, self.A_pinv = imgu.compute_norm_mat(self.width, self.height)
 
@@ -90,29 +97,37 @@ class FERPlusDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-
     def __getitem__(self, idx):
-        image_path, label_dist, face_rc_box = self.data[idx]
-        # abre e distorce com NumPy/C
-        img = Image.open(image_path)
-        img.load()
-        aug = imgu.distort_img(
-            img, Rect(face_rc_box),
-            self.width, self.height,
-            self.max_shift, self.max_scale,
-            self.max_angle, self.max_skew, self.do_flip
-        )
-        proc = imgu.preproc_img(aug, A=self.A, A_pinv=self.A_pinv)
-        tensor = torch.from_numpy(proc).float()
+        image_path, label_dist = self.data[idx]
+        image = Image.open(image_path).convert('L')
+        tensor = self.transform(image)  # [1, H, W]
 
-        # se houver transform TorchVision, aplica por cima
-        if self.transform:
-            tensor = self.transform(tensor)
-
-        # target
         target = self._process_target(label_dist)
         target_tensor = torch.tensor(target, dtype=torch.float32)
         return tensor, target_tensor
+
+    # def __getitem__(self, idx):
+    #     image_path, label_dist, face_rc_box = self.data[idx]
+    #     # abre e distorce com NumPy/C
+    #     img = Image.open(image_path)
+    #     img.load()
+    #     aug = imgu.distort_img(
+    #         img, Rect(face_rc_box),
+    #         self.width, self.height,
+    #         self.max_shift, self.max_scale,
+    #         self.max_angle, self.max_skew, self.do_flip
+    #     )
+    #     proc = imgu.preproc_img(aug, A=self.A, A_pinv=self.A_pinv)
+    #     tensor = torch.from_numpy(proc).float()
+
+    #     # se houver transform TorchVision, aplica por cima
+    #     if self.transform:
+    #         tensor = self.transform(tensor)
+
+    #     # target
+    #     target = self._process_target(label_dist)
+    #     target_tensor = torch.tensor(target, dtype=torch.float32)
+    #     return tensor, target_tensor
 
 
     # def __getitem__(self, idx):
