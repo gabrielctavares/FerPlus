@@ -14,7 +14,6 @@ from torchvision import transforms
 from rect_util import Rect
 
 import img_util as imgu
-
 def display_summary(train_data_reader, val_data_reader, test_data_reader):
     '''
     Resume os dados em um formato tabular.
@@ -66,7 +65,7 @@ class FERPlusDataset(Dataset):
         self.width           = parameters.width
         self.height          = parameters.height
         self.shuffle         = parameters.shuffle
-        self.mode            = parameters.training_mode
+        self.training_mode            = parameters.training_mode
         self.transform       = transform
         self.deterministic   = parameters.deterministic
 
