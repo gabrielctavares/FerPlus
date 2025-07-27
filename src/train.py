@@ -126,29 +126,18 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             opt.zero_grad()
             out = model(x)
             loss = cost_func(mode, out, y)
-            logging.info(f"Batch loss: {loss.item():.4f}")
-
-            if torch.isnan(loss):
-                logging.error("Loss is NaN, skipping batch")
-                continue
-            if torch.isinf(loss):
-                logging.error("Loss is Inf, skipping batch")
-                continue
-            if loss < 0:
-                logging.error(f"Loss is negative ({loss.item()}), skipping batch")
-                continue
-
+            logging.info(f"Batch loss: {loss.item():.4f}")            
             loss.backward()
             opt.step()
 
             preds = out.argmax(dim=1)
-            trues_for_comparison = y.argmax(dim=1) if y.ndim > 1 else y
+            trues = y.argmax(dim=1)
 
-            logging.info(f"Batch preds: {preds.tolist()}")
-            logging.info(f"Batch trues: {trues_for_comparison.tolist()}")
+            #logging.info(f"Batch preds: {preds.tolist()}")
+            #logging.info(f"Batch trues: {trues.tolist()}")
 
             running_loss   += loss.item() * x.size(0)
-            running_correct+= (preds==trues_for_comparison).sum().item()
+            running_correct+= (preds==trues).sum().item()
             running_total  += x.size(0)
             
             # TensorBoard scalars (a cada batch)
