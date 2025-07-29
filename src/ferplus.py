@@ -71,8 +71,8 @@ class FERPlusDataset(Dataset):
         self.transform = transforms.Compose([
             transforms.Grayscale(num_output_channels=1),
             transforms.Resize((self.height, self.width)),
-            transforms.Normalize(mean=[0.5], std=[0.5]),  
             transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5], std=[0.5]),  
         ])
 
         # pré-calcula matrizes de normalização (como no código antigo)
