@@ -38,11 +38,9 @@ class FERPlusParameters():
         self.width         = width
         self.height        = height
         self.training_mode = training_mode
-        self.deterministic = deterministic # Corrigido para 'deterministic'
+        self.deterministic = deterministic 
         self.shuffle       = shuffle
 
-        # Parâmetros de aumento de dados (adicionados aqui)
-        # Se 'deterministic' for True, sobrescreve com valores para sem aumento
         if self.deterministic:
             self.max_shift = 0.0
             self.max_scale = 1.0
@@ -90,6 +88,9 @@ class FERPlusDataset(Dataset):
         self.data                = []
         self.per_emotion_count   = np.zeros(self.emotion_count, dtype=np.int64)
         self._load_folders()
+        
+        print(f"FER+ Dataset loaded with {len(self.data)} images and {self.emotion_count} emotions.")
+        print(f"Emotions per class: {self.per_emotion_count.tolist()}")
         if self.shuffle:
             rnd.shuffle(self.data)
 
