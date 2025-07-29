@@ -87,13 +87,19 @@ class FERPlusDataset(Dataset):
         self.emotion_count       = parameters.target_size
         self.data                = []
         self.per_emotion_count   = np.zeros(self.emotion_count, dtype=np.int64)
-        self._load_folders()
-        
-        print(f"FER+ Dataset loaded with {len(self.data)} images and {self.emotion_count} emotions.")
-        print(f"Emotions per class: {self.per_emotion_count.tolist()}")
+        self._load_folders()        
         if self.shuffle:
             rnd.shuffle(self.data)
 
+    def display_summary(self):
+
+        print(f"FER+ Dataset loaded with {len(self.data)} images and {self.emotion_count} emotions.")
+        print(f"Emotions per class:")
+
+        emotion_header = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear', 'contempt']
+
+        for index, count in enumerate(self.per_emotion_count):
+            print(f"Emotion {emotion_header[index]}: {count} images")
 
     def __len__(self):
         return len(self.data)

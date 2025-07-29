@@ -88,11 +88,9 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
     }
 
 
-        # Log de tamanho e distribuição
-    # for split, dataset in ds.items():
-    #     logging.info(f"{split} size: {len(dataset)} samples")
-    #     if split == 'train':
-    #         dataset.plot_class_distribution(writer, step=0)
+     
+    for split, dataset in ds.items():
+        dataset.display_summary()  # Exibe resumo do dataset
 
    # DataLoaders
     num_workers = 4
