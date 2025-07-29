@@ -126,14 +126,18 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             #logging.info(f"Batch loss: {loss.item():.4f}")            
             loss.backward()
             opt.step()
-
+            
+            logging.info(out)
             preds = out.argmax(dim=1)
             trues = y.argmax(dim=1)
 
             # se ta no ultimo repeticao, loga as previsoes e os valores verdadeiros
+            
             if batch_idx == len(dl['train']) - 1:
                 logging.info(f"Epoch {ep}/{epochs}, Batch {batch_idx+1}/{len(dl['train'])} — " 
                     f"preds: {preds.tolist()}, trues: {trues.tolist()}")
+                logging.info(f"Out: {out}")
+                
 
             #logging.info(f"Batch preds: {preds.tolist()}")
             #logging.info(f"Batch trues: {trues.tolist()}")
