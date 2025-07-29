@@ -188,16 +188,7 @@ class FERPlusDataset(Dataset):
                     face_rc_box = list(map(int, row[1][1:-1].split(',')))
 
                     emotion_raw = list(map(float, row[2:len(row)]))
-                    emotion = self._process_data(emotion_raw, self.training_mode) 
-                    
-                    # A indexação de emoções deve ser cuidadosamente verificada.
-                    # As emoções originais do FER+ são:
-                    # 0: neutral, 1: happiness, 2: surprise, 3: sadness, 4: anger, 5: disgust, 6: fear, 7: contempt
-                    # 8: unknown, 9: non-face
-                    # Se target_size=8, estamos focando nas 8 primeiras.
-                    # As emoções 'unknown' e 'non-face' são tratadas no _process_data
-                    # e removidas antes de adicionar ao self.data se a emoção principal
-                    # não for uma das 8 básicas.
+                    emotion = self._process_data(emotion_raw, self.training_mode)                     
                     
                     # Encontra o índice da emoção com maior voto APÓS o _process_data (que já filtra)
                     idx_most_voted = np.argmax(emotion)
@@ -218,7 +209,6 @@ class FERPlusDataset(Dataset):
                         self.per_emotion_count[idx_most_voted] += 1
             
     def _process_target(self, target):
-        # Esta função permanece a mesma, pois lida com a lógica dos rótulos
         if self.training_mode == 'majority' or self.training_mode == 'crossentropy': 
             return target
         elif self.training_mode == 'probability': 
@@ -233,7 +223,6 @@ class FERPlusDataset(Dataset):
             return (1-epsilon)*new_target + epsilon*np.ones_like(target)
 
     def _process_data(self, emotion_raw, mode):
-        # Esta função permanece a mesma em sua lógica, pois decide como interpretar os votos brutos
         size = len(emotion_raw) # Inclui 'unknown' e 'non-face' aqui
         emotion_unknown       = [0.0] * size
         emotion_unknown[-2] = 1.0 

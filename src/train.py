@@ -29,9 +29,9 @@ emotion_table = {
 def cost_func(training_mode, prediction_logits, target):
     if training_mode in ['majority', 'probability', 'crossentropy']:
         labels = torch.argmax(target, dim=1)
-        return F.cross_entropy(prediction_logits, labels, label_smoothing=0.1)  # melhor usar F.* do que nn.*() aqui
+        return F.cross_entropy(prediction_logits, labels, label_smoothing=0.1) 
     elif training_mode == 'multi_target':
-        pred_probs = F.softmax(prediction_logits, dim=1)  # mais idiomático que nn.Softmax()
+        pred_probs = F.softmax(prediction_logits, dim=1) 
         prod = pred_probs * target
         loss = -torch.log(torch.max(prod, dim=1).values + 1e-8)
         return loss.mean()
@@ -55,7 +55,7 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         transforms.RandomResizedCrop(
             (params_train.height, params_train.width), 
             scale=(1.0 / params_train.max_scale, params_train.max_scale)
-            # REMOVIDO: ratio=(1.0 - params_train.max_skew, 1.0 + params_train.max_skew)
+            # ratio=(1.0 - params_train.max_skew, 1.0 + params_train.max_skew)
         ),
         transforms.RandomAffine(
             degrees=params_train.max_angle,
@@ -66,11 +66,10 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
         transforms.ToTensor(),
     ])
 
-    # Para os conjuntos de validação e teste (sem aumentos, apenas redimensionamento e ToTensor)
     val_test_transforms = transforms.Compose([
-        transforms.Resize((params_val_test.height, params_val_test.width)), # Garante o tamanho correto
-        transforms.ToTensor(), # Converte PIL Image para FloatTensor e normaliza [0.0, 1.0]
-        # transforms.Normalize(mean=[0.485], std=[0.229]) # Mesma normalização do treino
+        transforms.Resize((params_val_test.height, params_val_test.width)), 
+        transforms.ToTensor(), 
+        # transforms.Normalize(mean=[0.485], std=[0.229]) 
     ])
 
     # TensorBoard
@@ -127,7 +126,6 @@ def main(base_folder, mode='majority', model_name='VGG13', epochs=3, bs=64):
             loss.backward()
             opt.step()
             
-            logging.info(out)
             preds = out.argmax(dim=1)
             trues = y.argmax(dim=1)
 
