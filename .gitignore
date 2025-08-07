@@ -7,3 +7,5 @@ fer2013/fer2013.csv
 src/__pycache__/
 runs/
 *.pth
+
+.vscode/
