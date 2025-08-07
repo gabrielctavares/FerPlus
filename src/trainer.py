@@ -34,9 +34,7 @@ class Trainer:
     
     def compute_loss(self, prediction_logits: torch.Tensor, target: torch.Tensor, 
                     class_weights: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """
-        Função de loss melhorada com suporte a class weights e diferentes modos
-        """
+       
         if self.training_mode in ['majority', 'probability', 'crossentropy']:
             labels = torch.argmax(target, dim=1)
             

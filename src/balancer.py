@@ -50,7 +50,7 @@ class ClassBalancer:
         # Normaliza os pesos
         weights = weights / weights.sum() * n_classes
         
-        return torch.tensor(weights, dtype=torch.float32)
+        return None #torch.tensor(weights, dtype=torch.float32)
     
     def create_weighted_sampler(self, dataset: FERPlusDataset) -> Optional[WeightedRandomSampler]:
         """Cria um sampler balanceado para o DataLoader"""
