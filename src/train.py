@@ -23,17 +23,15 @@ from models import build_model
 from definitions import logging, device, emotion_table, emotion_names
 
 def main(base_folder: str, mode: str = 'majority', model_name: str = 'VGG13', 
-         epochs: int = 3, bs: int = 64, balance_strategy: str = "weighted_sampling",
+         epochs: int = 3, bs: int = 64, balance_strategy: str = "none",
          augmentation_intensity: str = "medium"):
     
-    # Caminhos dos dados
     paths = {
         'train': 'FER2013Train',
         'valid': 'FER2013Valid',
         'test': 'FER2013Test'
     }
     
-    # Parâmetros otimizados
     params_train = FERPlusParameters(
         target_size=len(emotion_table), 
         width=64, height=64, 
@@ -41,7 +39,7 @@ def main(base_folder: str, mode: str = 'majority', model_name: str = 'VGG13',
         deterministic=False, 
         shuffle=True,
         num_workers=4,
-        preload_data=False  # Usa a versão otimizada
+        preload_data=False  
     )
     
     params_val_test = FERPlusParameters(
@@ -82,8 +80,8 @@ def main(base_folder: str, mode: str = 'majority', model_name: str = 'VGG13',
     
     # Sistema de balanceamento
     balancer = ClassBalancer(balance_strategy)
-    train_sampler = None # balancer.create_weighted_sampler(datasets['train'])
-    
+    logging.info(f"Usando estratégia de balanceamento: {balance_strategy}")
+
     # Pesos das classes para loss function
     class_weights = balancer.compute_class_weights(datasets['train'].per_emotion_count)
     logging.info(f"Class weights: {class_weights}")
@@ -92,13 +90,12 @@ def main(base_folder: str, mode: str = 'majority', model_name: str = 'VGG13',
     dataloaders = {}
     for split in paths:
         shuffle = (split == 'train')
-        sampler = train_sampler if split == 'train' else None
+        # sampler = train_sampler if split == 'train' else None
         
         dataloaders[split] = DataLoader(
             datasets[split],
             batch_size=bs,
             shuffle=shuffle,
-            #sampler=sampler,
             num_workers=4,
             pin_memory=True,
             persistent_workers=True
@@ -205,10 +202,10 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--batch_size", type=int, default=64)
 
     parser.add_argument("--model", default="VGG13", help="Nome do modelo")
-    parser.add_argument("--balance", default="weighted_sampling", 
-                       choices=["none", "inverse_frequency", "sqrt_inverse", "weighted_sampling"])
+    parser.add_argument("--balance", default="none",  
+                       choices=["none", "inverse_frequency", "sqrt_inverse", "log_inverse", "focal", "weighted_sampling"])
     parser.add_argument("--augmentation", default="medium",
-                       choices=["light", "medium", "heavy"])
+                       choices=["none", "light", "medium", "heavy"])
     
     args = parser.parse_args()
     

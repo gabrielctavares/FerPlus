@@ -11,6 +11,14 @@ class DataAugmentation:
         
         # Define intensidade da augmentation
         intensity_configs = {
+            "none": {
+                "rotation_range": 0,
+                "zoom_range": 0,
+                "shift_range": 0,
+                "brightness_range": 0,
+                "contrast_range": 0,
+                "flip_prob": 0
+            },
             "light": {
                 "rotation_range": 10,
                 "zoom_range": 0.1,
@@ -41,6 +49,9 @@ class DataAugmentation:
     
     def get_train_transforms(self, height: int, width: int) -> transforms.Compose:
         """Retorna transformações de treinamento otimizadas"""
+        if self.intensity == "none":
+            return self.get_val_transforms(height, width)
+
         return transforms.Compose([
             # Redimensionamento inteligente
             transforms.Resize((int(height * 1.1), int(width * 1.1))),

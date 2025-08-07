@@ -16,13 +16,19 @@ class ClassBalancer:
         Computa pesos das classes usando diferentes estratégias
         
         Estratégias:
+        - 'none': Sem balanceamento        
         - 'inverse_frequency': 1/freq
         - 'sqrt_inverse': 1/sqrt(freq)
         - 'log_inverse': 1/log(1+freq)
         - 'focal': Para focal loss
+        - 'weighted_sampling': Usado com WeightedRandomSampler
+
         """
         total_samples = class_counts.sum()
         n_classes = len(class_counts)
+        
+        if self.strategy == "none":
+            return None
         
         if self.strategy == "inverse_frequency":
             # Peso = Total_samples / (n_classes * class_count)
@@ -50,28 +56,28 @@ class ClassBalancer:
         # Normaliza os pesos
         weights = weights / weights.sum() * n_classes
         
-        return None #torch.tensor(weights, dtype=torch.float32)
+        return torch.tensor(weights, dtype=torch.float32)
     
-    def create_weighted_sampler(self, dataset: FERPlusDataset) -> Optional[WeightedRandomSampler]:
-        """Cria um sampler balanceado para o DataLoader"""
-        if self.strategy == "none":
-            return None
+    # def create_weighted_sampler(self, dataset: FERPlusDataset) -> Optional[WeightedRandomSampler]:
+    #     """Cria um sampler balanceado para o DataLoader"""
+    #     if self.strategy == "none":
+    #         return None
             
-        # Obtém contagens das classes
-        class_counts = dataset.per_emotion_count
-        class_weights = self.compute_class_weights(class_counts)
+    #     # Obtém contagens das classes
+    #     class_counts = dataset.per_emotion_count
+    #     class_weights = self.compute_class_weights(class_counts)
         
-        # Calcula peso para cada amostra
-        sample_weights = []
-        for _, emotion_labels, _ in dataset.data:
-            # Encontra a classe majoritária
-            class_idx = np.argmax(emotion_labels)
-            sample_weights.append(class_weights[class_idx].item())
+    #     # Calcula peso para cada amostra
+    #     sample_weights = []
+    #     for _, emotion_labels, _ in dataset.data:
+    #         # Encontra a classe majoritária
+    #         class_idx = np.argmax(emotion_labels)
+    #         sample_weights.append(class_weights[class_idx].item())
         
-        sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
+    #     sample_weights = torch.tensor(sample_weights, dtype=torch.float32)
         
-        return WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),
-            replacement=True
-        )
+    #     return WeightedRandomSampler(
+    #         weights=sample_weights,
+    #         num_samples=len(sample_weights),
+    #         replacement=True
+    #     )

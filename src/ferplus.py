@@ -15,20 +15,6 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from rect_util import Rect
 
-def display_summary(train_data_reader, val_data_reader, test_data_reader):
-    '''
-    Resume os dados em um formato tabular.
-    '''
-    emotion_count = train_data_reader.emotion_count
-    emotion_header = ['neutral', 'happiness', 'surprise', 'sadness', 'anger', 'disgust', 'fear', 'contempt']
-
-    logging.info("{0}\t{1}\t{2}\t{3}".format("".ljust(10), "Train", "Val", "Test"))
-    for index in range(emotion_count):
-        logging.info("{0}\t{1}\t{2}\t{3}".format(emotion_header[index].ljust(10), 
-                                                 train_data_reader.per_emotion_count[index], 
-                                                 val_data_reader.per_emotion_count[index], 
-                                                 test_data_reader.per_emotion_count[index]))
-
 class FERPlusParameters:
     '''
     Parâmetros do leitor FER+ com melhor organização
@@ -37,7 +23,7 @@ class FERPlusParameters:
                  training_mode: str = "majority", deterministic: bool = False, 
                  shuffle: bool = True, max_shift: float = 0.08, max_scale: float = 1.05, 
                  max_angle: float = 20.0, max_skew: float = 0.05, do_flip: bool = True,
-                 num_workers: int = 4, preload_data: bool = True):
+                 num_workers: int = 4, preload_data: bool = False):
         
         self.target_size = target_size
         self.width = width
@@ -62,10 +48,210 @@ class FERPlusParameters:
             self.max_skew = max_skew
             self.do_flip = do_flip
 
+def load_image_data(args: Tuple[str, List[int], int, int], transform: Optional[transforms.Compose] = None) -> Tuple[torch.Tensor, List[int]]:
+    '''
+    Função para carregamento paralelo de imagens
+    '''
+    image_path, face_box, width, height = args
+    try:
+        # Carrega e processa a imagem
+        image = Image.open(image_path).convert('L')
+        
+        # Aplica crop da face
+        if face_box:
+            left, top, right, bottom = face_box
+            # Garante que as coordenadas estão dentro dos limites da imagem
+            img_width, img_height = image.size
+            left = max(0, min(left, img_width))
+            right = max(left, min(right, img_width))
+            top = max(0, min(top, img_height))
+            bottom = max(top, min(bottom, img_height))
+            
+            if right > left and bottom > top:
+                image = image.crop((left, top, right, bottom))
+        
+        # Redimensiona para o tamanho alvo
+        image = image.resize((width, height), Image.LANCZOS)
+        
+        if not transform:
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5], std=[0.5])  # Normalização [-1, 1]
+            ])
+        
+
+        image_tensor = transform(image)
+        return image_tensor, face_box
+        
+    except Exception as e:
+        logging.error(f"Erro ao carregar imagem {image_path}: {e}")
+        # Retorna tensor vazio em caso de erro
+        empty_tensor = torch.zeros((1, height, width))
+        return empty_tensor, face_box
+
+class FERPlusDataset(Dataset):
+    '''
+    Dataset PyTorch otimizado para FER+ com carregamento antecipado opcional
+    '''
+    def __init__(self, base_folder: str, sub_folders: List[str], label_file_name: str, 
+                 parameters: FERPlusParameters, transform: Optional[transforms.Compose] = None):
+        
+        self.base_folder = base_folder
+        self.sub_folders = sub_folders
+        self.label_file_name = label_file_name
+        self.emotion_count = parameters.target_size
+        self.width = parameters.width
+        self.height = parameters.height
+        self.shuffle = parameters.shuffle
+        self.training_mode = parameters.training_mode
+        self.transform = transform
+        self.preload_data = parameters.preload_data
+        self.num_workers = parameters.num_workers
+        
+        # Inicializa o processador de emoções
+        self.emotion_processor = EmotionProcessor(parameters.target_size)
+        
+        # Estruturas de dados
+        self.data = []
+        self.preloaded_images = []
+        self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64)
+        
+        # Carrega os dados
+        self._load_folders()
+        
+        if self.shuffle:
+            self._shuffle_data()
+    
+    def _load_folders(self):
+        '''Carrega os metadados dos folders'''
+        logging.info("Carregando metadados...")
+        
+        for folder_name in self.sub_folders:
+            logging.info(f"Processando {os.path.join(self.base_folder, folder_name)}")
+            folder_path = os.path.join(self.base_folder, folder_name)
+            label_path = os.path.join(folder_path, self.label_file_name)
+            
+            with open(label_path, 'r') as csvfile:
+                emotion_reader = csv.reader(csvfile)
+                for row in emotion_reader:
+                    image_path = os.path.join(folder_path, row[0])
+                    
+                    # Processa bounding box
+                    face_box = list(map(int, row[1][1:-1].split(',')))
+                    
+                    # Processa emoções
+                    emotion_raw = list(map(float, row[2:]))
+                    emotion = self.emotion_processor.process_raw_emotion(emotion_raw, self.training_mode)
+                    
+                    # Verifica se a emoção principal é válida
+                    idx_most_voted = np.argmax(emotion)
+                    if idx_most_voted < (len(emotion) - 2):  # Não é unknown/non-face
+                        # Remove unknown e non-face
+                        emotion_final = emotion[:-2]
+                        sum_emotion = sum(emotion_final)
+                        
+                        if sum_emotion > 0:
+                            emotion_final = [e / sum_emotion for e in emotion_final]
+                            self.data.append((image_path, emotion_final, face_box))
+                            self.per_emotion_count[idx_most_voted] += 1
+        
+        logging.info(f"Total de imagens válidas: {len(self.data)}")
+        
+        # Carrega as imagens se solicitado
+        if self.preload_data:
+            self._preload_images()
+    
+    def _preload_images(self):
+        '''Carrega todas as imagens na memória usando processamento paralelo'''
+        logging.info("Carregando imagens na memória...")
+        
+        # Prepara argumentos para processamento paralelo
+        load_args = [
+            (img_path, face_box, self.width, self.height) 
+            for img_path, _, face_box in self.data
+        ]
+        
+        # Carrega imagens em paralelo
+        with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+            futures = {executor.submit(load_image_data, args, self.transform): i 
+                      for i, args in enumerate(load_args)}
+            
+            # Inicializa lista de imagens pré-carregadas
+            self.preloaded_images = [None] * len(self.data)
+            
+            for future in as_completed(futures):
+                idx = futures[future]
+                try:
+                    image_tensor, _ = future.result()
+                    self.preloaded_images[idx] = image_tensor
+                except Exception as e:
+                    logging.error(f"Erro no carregamento da imagem {idx}: {e}")
+                    # Cria tensor vazio em caso de erro
+                    self.preloaded_images[idx] = torch.zeros((1, self.height, self.width))
+        
+        logging.info("Carregamento de imagens concluído!")
+    
+    def _shuffle_data(self):
+        '''Embaralha os dados mantendo a correspondência'''
+        indices = list(range(len(self.data)))
+        rnd.shuffle(indices)
+        
+        # Reordena dados
+        self.data = [self.data[i] for i in indices]
+        
+        # Reordena imagens pré-carregadas se existirem
+        if self.preloaded_images:
+            self.preloaded_images = [self.preloaded_images[i] for i in indices]
+    
+    def __len__(self) -> int:
+        return len(self.data)
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        if idx >= len(self.data):
+            raise IndexError(f"Índice {idx} fora do range [0, {len(self.data)})")
+        
+        image_path, emotion_labels, face_box = self.data[idx]
+        
+        # Obtém a imagem
+        if self.preload_data and self.preloaded_images:
+            image_tensor = self.preloaded_images[idx].clone()
+        else:
+            # Carregamento lazy
+            image_tensor, _ = load_image_data((image_path, face_box, self.width, self.height), transform=self.transform)
+
+        # Aplica transformações adicionais se fornecidas
+        if self.transform:
+            # Converte tensor para PIL para aplicar transforms
+            to_pil = transforms.ToPILImage()
+            image_pil = to_pil(image_tensor)
+            image_tensor = self.transform(image_pil)
+        
+        # Processa target baseado no modo de treinamento
+        target = self.emotion_processor.process_target(emotion_labels, self.training_mode)
+        target_tensor = torch.from_numpy(target)
+        
+        return image_tensor, target_tensor
+
+    def get_emotion_distribution(self) -> dict:
+        '''Retorna a distribuição das emoções no dataset'''
+        emotion_names = ['neutral', 'happiness', 'surprise', 'sadness', 
+                        'anger', 'disgust', 'fear', 'contempt']
+        
+        distribution = {}
+        total = self.per_emotion_count.sum()
+        
+        for i, name in enumerate(emotion_names):
+            count = self.per_emotion_count[i]
+            percentage = (count / total * 100) if total > 0 else 0
+            distribution[name] = {
+                'count': int(count),
+                'percentage': round(percentage, 2)
+            }
+        
+        return distribution    
+    
+
 class EmotionProcessor:
-    '''
-    Classe separada para processamento de emoções baseado no training mode
-    '''
     def __init__(self, target_size: int = 8):
         self.target_size = target_size
         
@@ -178,223 +364,3 @@ class EmotionProcessor:
         new_target[new_target > 0] = 1.0
         epsilon = 0.001
         return ((1 - epsilon) * new_target + epsilon * np.ones_like(target)).astype(np.float32)
-
-def load_image_data(args: Tuple[str, List[int], int, int]) -> Tuple[torch.Tensor, List[int]]:
-    '''
-    Função para carregamento paralelo de imagens
-    '''
-    image_path, face_box, width, height = args
-    try:
-        # Carrega e processa a imagem
-        image = Image.open(image_path).convert('L')
-        
-        # Aplica crop da face
-        if face_box:
-            left, top, right, bottom = face_box
-            # Garante que as coordenadas estão dentro dos limites da imagem
-            img_width, img_height = image.size
-            left = max(0, min(left, img_width))
-            right = max(left, min(right, img_width))
-            top = max(0, min(top, img_height))
-            bottom = max(top, min(bottom, img_height))
-            
-            if right > left and bottom > top:
-                image = image.crop((left, top, right, bottom))
-        
-        # Redimensiona para o tamanho alvo
-        image = image.resize((width, height), Image.LANCZOS)
-        
-        # Converte para tensor e normaliza
-        transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5])  # Normalização [-1, 1]
-        ])
-        
-        image_tensor = transform(image)
-        return image_tensor, face_box
-        
-    except Exception as e:
-        logging.error(f"Erro ao carregar imagem {image_path}: {e}")
-        # Retorna tensor vazio em caso de erro
-        empty_tensor = torch.zeros((1, height, width))
-        return empty_tensor, face_box
-
-class FERPlusDataset(Dataset):
-    '''
-    Dataset PyTorch otimizado para FER+ com carregamento antecipado opcional
-    '''
-    def __init__(self, base_folder: str, sub_folders: List[str], label_file_name: str, 
-                 parameters: FERPlusParameters, transform: Optional[transforms.Compose] = None):
-        
-        self.base_folder = base_folder
-        self.sub_folders = sub_folders
-        self.label_file_name = label_file_name
-        self.emotion_count = parameters.target_size
-        self.width = parameters.width
-        self.height = parameters.height
-        self.shuffle = parameters.shuffle
-        self.training_mode = parameters.training_mode
-        self.transform = transform
-        self.preload_data = parameters.preload_data
-        self.num_workers = parameters.num_workers
-        
-        # Inicializa o processador de emoções
-        self.emotion_processor = EmotionProcessor(parameters.target_size)
-        
-        # Estruturas de dados
-        self.data = []
-        self.preloaded_images = []
-        self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64)
-        
-        # Carrega os dados
-        self._load_folders()
-        
-        if self.shuffle:
-            self._shuffle_data()
-    
-    def _load_folders(self):
-        '''Carrega os metadados dos folders'''
-        logging.info("Carregando metadados...")
-        
-        for folder_name in self.sub_folders:
-            logging.info(f"Processando {os.path.join(self.base_folder, folder_name)}")
-            folder_path = os.path.join(self.base_folder, folder_name)
-            label_path = os.path.join(folder_path, self.label_file_name)
-            
-            with open(label_path, 'r') as csvfile:
-                emotion_reader = csv.reader(csvfile)
-                for row in emotion_reader:
-                    image_path = os.path.join(folder_path, row[0])
-                    
-                    # Processa bounding box
-                    face_box = list(map(int, row[1][1:-1].split(',')))
-                    
-                    # Processa emoções
-                    emotion_raw = list(map(float, row[2:]))
-                    emotion = self.emotion_processor.process_raw_emotion(emotion_raw, self.training_mode)
-                    
-                    # Verifica se a emoção principal é válida
-                    idx_most_voted = np.argmax(emotion)
-                    if idx_most_voted < (len(emotion) - 2):  # Não é unknown/non-face
-                        # Remove unknown e non-face
-                        emotion_final = emotion[:-2]
-                        sum_emotion = sum(emotion_final)
-                        
-                        if sum_emotion > 0:
-                            emotion_final = [e / sum_emotion for e in emotion_final]
-                            self.data.append((image_path, emotion_final, face_box))
-                            self.per_emotion_count[idx_most_voted] += 1
-        
-        logging.info(f"Total de imagens válidas: {len(self.data)}")
-        
-        # Carrega as imagens se solicitado
-        if self.preload_data:
-            self._preload_images()
-    
-    def _preload_images(self):
-        '''Carrega todas as imagens na memória usando processamento paralelo'''
-        logging.info("Carregando imagens na memória...")
-        
-        # Prepara argumentos para processamento paralelo
-        load_args = [
-            (img_path, face_box, self.width, self.height) 
-            for img_path, _, face_box in self.data
-        ]
-        
-        # Carrega imagens em paralelo
-        with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
-            futures = {executor.submit(load_image_data, args): i 
-                      for i, args in enumerate(load_args)}
-            
-            # Inicializa lista de imagens pré-carregadas
-            self.preloaded_images = [None] * len(self.data)
-            
-            for future in as_completed(futures):
-                idx = futures[future]
-                try:
-                    image_tensor, _ = future.result()
-                    self.preloaded_images[idx] = image_tensor
-                except Exception as e:
-                    logging.error(f"Erro no carregamento da imagem {idx}: {e}")
-                    # Cria tensor vazio em caso de erro
-                    self.preloaded_images[idx] = torch.zeros((1, self.height, self.width))
-        
-        logging.info("Carregamento de imagens concluído!")
-    
-    def _shuffle_data(self):
-        '''Embaralha os dados mantendo a correspondência'''
-        indices = list(range(len(self.data)))
-        rnd.shuffle(indices)
-        
-        # Reordena dados
-        self.data = [self.data[i] for i in indices]
-        
-        # Reordena imagens pré-carregadas se existirem
-        if self.preloaded_images:
-            self.preloaded_images = [self.preloaded_images[i] for i in indices]
-    
-    def __len__(self) -> int:
-        return len(self.data)
-    
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        if idx >= len(self.data):
-            raise IndexError(f"Índice {idx} fora do range [0, {len(self.data)})")
-        
-        image_path, emotion_labels, face_box = self.data[idx]
-        
-        # Obtém a imagem
-        if self.preload_data and self.preloaded_images:
-            image_tensor = self.preloaded_images[idx].clone()
-        else:
-            # Carregamento lazy
-            image_tensor, _ = load_image_data((image_path, face_box, self.width, self.height))
-        
-        # Aplica transformações adicionais se fornecidas
-        if self.transform:
-            # Converte tensor para PIL para aplicar transforms
-            to_pil = transforms.ToPILImage()
-            image_pil = to_pil(image_tensor)
-            image_tensor = self.transform(image_pil)
-        
-        # Processa target baseado no modo de treinamento
-        target = self.emotion_processor.process_target(emotion_labels, self.training_mode)
-        target_tensor = torch.from_numpy(target)
-        
-        return image_tensor, target_tensor
-
-    def get_emotion_distribution(self) -> dict:
-        '''Retorna a distribuição das emoções no dataset'''
-        emotion_names = ['neutral', 'happiness', 'surprise', 'sadness', 
-                        'anger', 'disgust', 'fear', 'contempt']
-        
-        distribution = {}
-        total = self.per_emotion_count.sum()
-        
-        for i, name in enumerate(emotion_names):
-            count = self.per_emotion_count[i]
-            percentage = (count / total * 100) if total > 0 else 0
-            distribution[name] = {
-                'count': int(count),
-                'percentage': round(percentage, 2)
-            }
-        
-        return distribution
-    
-    def get_sample_weights(self) -> torch.Tensor:
-        '''
-        Calcula pesos para balanceamento de classes
-        Retorna pesos para cada amostra baseado na frequência inversa da classe
-        '''
-        weights = []
-        class_counts = self.per_emotion_count
-        total_samples = len(self.data)
-        
-        # Calcula peso para cada classe (frequência inversa)
-        class_weights = total_samples / (self.emotion_count * class_counts + 1e-6)
-        
-        for _, emotion_labels, _ in self.data:
-            # Para cada amostra, usa o peso da classe majoritária
-            class_idx = np.argmax(emotion_labels)
-            weights.append(class_weights[class_idx])
-        
-        return torch.tensor(weights, dtype=torch.float32)
