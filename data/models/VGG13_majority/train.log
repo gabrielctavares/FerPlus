@@ -1,0 +1,10 @@
+INFO:root:Starting with training mode majority using VGG13 model and max epochs 10.
+INFO:root:		Train	Val	Test
+INFO:root:0	8733	1180	1083
+INFO:root:1	7284	862	892
+INFO:root:2	3136	411	394
+INFO:root:3	3022	348	382
+INFO:root:4	2098	289	269
+INFO:root:5	116	25	16
+INFO:root:6	536	60	86
+INFO:root:7	120	16	15

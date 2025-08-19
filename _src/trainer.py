@@ -105,7 +105,6 @@ class Trainer:
             optimizer.zero_grad()
             outputs = model(x)
             
-            # Move class_weights para o device se necessário
             weights = class_weights.to(device) if class_weights is not None else None
             loss = self.compute_loss(outputs, y, weights)
             
