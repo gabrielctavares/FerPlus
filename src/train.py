@@ -39,6 +39,32 @@ def accuracy_from_logits(logits, targets):
     true = torch.argmax(targets, dim=1)
     return (pred == true).float().mean().item()
 
+def per_class_accuracy(model, dataloader, device):
+    model.eval()
+    correct = {i: 0 for i in range(len(emotion_table))}
+    total   = {i: 0 for i in range(len(emotion_table))}
+    
+    with torch.no_grad():
+        for xb, yb in dataloader:
+            xb, yb = xb.to(device), yb.to(device)
+            logits = model(xb)
+            preds = torch.argmax(logits, dim=1)
+            labels = torch.argmax(yb, dim=1)
+
+            for p, t in zip(preds.cpu().numpy(), labels.cpu().numpy()):
+                total[t] += 1
+                if p == t:
+                    correct[t] += 1
+    
+    accs = {}
+    for idx in total:
+        if total[idx] > 0:
+            accs[idx] = correct[idx] / total[idx]
+        else:
+            accs[idx] = 0.0
+    return accs
+
+
 def main(base_folder, training_mode='majority', model_name='VGG13',
          max_epochs=100, batch_size=32, num_workers=0, device=None):
 
@@ -181,27 +207,3 @@ if __name__ == "__main__":
     main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers)
 
 
-def per_class_accuracy(model, dataloader, device):
-    model.eval()
-    correct = {i: 0 for i in range(len(emotion_table))}
-    total   = {i: 0 for i in range(len(emotion_table))}
-    
-    with torch.no_grad():
-        for xb, yb in dataloader:
-            xb, yb = xb.to(device), yb.to(device)
-            logits = model(xb)
-            preds = torch.argmax(logits, dim=1)
-            labels = torch.argmax(yb, dim=1)
-
-            for p, t in zip(preds.cpu().numpy(), labels.cpu().numpy()):
-                total[t] += 1
-                if p == t:
-                    correct[t] += 1
-    
-    accs = {}
-    for idx in total:
-        if total[idx] > 0:
-            accs[idx] = correct[idx] / total[idx]
-        else:
-            accs[idx] = 0.0
-    return accs

@@ -59,7 +59,12 @@ class FERPlusDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        image_path, image_data, emotion, face_rc = self.data[idx]
+        #image_path, image_data, emotion, face_rc = self.data[idx]
+        image_path, emotion, face_rc = self.data[idx]
+        
+        # carregamento lazy para melhorar o desempenho no colab
+        image_data = Image.open(image_path)
+        image_data.load()  
 
         # Apply identical augmentation & preprocessing as CNTK reader
         distorted = imgu.distort_img(
@@ -91,8 +96,8 @@ class FERPlusDataset(Dataset):
                 emotion_label = csv.reader(csvfile)
                 for row in emotion_label:
                     image_path = os.path.join(folder_path, row[0])
-                    image_data = Image.open(image_path)
-                    image_data.load()
+                    #image_data = Image.open(image_path) carregar em lazy pra melhorar o desempenho no colab.
+                    #image_data.load()
 
                     box = list(map(int, row[1][1:-1].split(',')))
                     face_rc = Rect(box)
@@ -104,7 +109,8 @@ class FERPlusDataset(Dataset):
                         emotion = emotion[:-2]
                         s = float(sum(emotion))
                         emotion = [float(i)/s for i in emotion]
-                        self.data.append((image_path, image_data, np.array(emotion, dtype=np.float32), face_rc))
+                        #self.data.append((image_path, image_data, np.array(emotion, dtype=np.float32), face_rc))
+                        self.data.append((image_path, np.array(emotion, dtype=np.float32), face_rc))
                         self.per_emotion_count[idx] += 1
 
         self.indices = np.arange(len(self.data))
