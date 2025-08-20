@@ -85,11 +85,10 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     output_model_folder = os.path.join(output_model_path, f"{model_name}_{training_mode}")
     os.makedirs(output_model_folder, exist_ok=True)
 
-    logging.basicConfig(
-        filename=os.path.join(output_model_folder, "train.log"),
-        filemode='w', level=logging.INFO
-    )
-    #logging.getLogger().addHandler(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(asctime)s - %(message)s', handlers=[
+        logging.FileHandler(os.path.join(output_model_folder, "train.log")),
+        logging.StreamHandler()
+    ])
 
     logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
 

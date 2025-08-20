@@ -8,5 +8,5 @@ src/__pycache__/
 runs/
 *.pth
 *.pt
-
+*.log
 .vscode/
