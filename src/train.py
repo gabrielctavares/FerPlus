@@ -13,7 +13,7 @@ from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
 from definitions import device, emotion_table, emotion_names
 from torch.optim.lr_scheduler import LambdaLR
-
+from torch.utils.data.sampler import WeightedRandomSampler
 
 idx2emotion = {v: k for k, v in emotion_table.items()}
 
@@ -96,7 +96,15 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
         cname = idx2emotion[idx]
         logging.info(f"{cname:10s}\t{train_ds.per_emotion_count[idx]}\t{val_ds.per_emotion_count[idx]}\t{test_ds.per_emotion_count[idx]}")
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=(device=='cuda'))
+    # Balanceamento via WeightedRandomSampler
+    class_counts = torch.tensor(train_ds.per_emotion_count, dtype=torch.float)
+    class_weights = 1.0 / class_counts
+    labels = torch.tensor(train_ds.labels, dtype=torch.long)
+    sample_weights = class_weights[labels]
+
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=(device=='cuda'))
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
 
