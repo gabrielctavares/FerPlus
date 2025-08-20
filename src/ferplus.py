@@ -1,7 +1,4 @@
 
-# Copyright (c) Microsoft. 
-# Port to PyTorch by community use; license presumed MIT as original.
-# Keeps identical behaviors to CNTK reader, including augmentations & modes.
 import os
 import csv
 import numpy as np
@@ -21,10 +18,6 @@ class FERPlusParameters:
         self.shuffle = shuffle
 
 class FERPlusDataset(Dataset):
-    """
-    PyTorch Dataset equivalent to FERPlusReader's internal storage.
-    Uses img_util.py for distortions and preprocessing to match CNTK behavior.
-    """
     def __init__(self, base_folder, sub_folders, label_file_name, parameters: FERPlusParameters):
         self.base_folder = base_folder
         self.sub_folders = sub_folders
@@ -67,7 +60,6 @@ class FERPlusDataset(Dataset):
         image_data = Image.open(image_path)
         image_data.load()  
 
-        # Apply identical augmentation & preprocessing as CNTK reader
         distorted = imgu.distort_img(
             np.asarray(image_data, dtype=np.uint8),
             face_rc,
@@ -79,7 +71,7 @@ class FERPlusDataset(Dataset):
             self.max_skew,
             flip=self.do_flip
         )
-        final_image = imgu.preproc_img(distorted, A=self.A, A_pinv=self.A_pinv)  # [-?, ?] float array
+        final_image = imgu.preproc_img(distorted, A=self.A, A_pinv=self.A_pinv) 
 
         # Convert to torch tensors in (C,H,W) with C=1
         x = torch.from_numpy(final_image.astype(np.float32)).unsqueeze(0)
@@ -110,6 +102,7 @@ class FERPlusDataset(Dataset):
                         emotion = emotion[:-2]
                         s = float(sum(emotion))
                         emotion = [float(i)/s for i in emotion]
+
                         #self.data.append((image_path, image_data, np.array(emotion, dtype=np.float32), face_rc))
                         self.data.append((image_path, np.array(emotion, dtype=np.float32), face_rc))
                         self.labels.append(idx) 
@@ -118,7 +111,6 @@ class FERPlusDataset(Dataset):
         self.indices = np.arange(len(self.data))
         if self.shuffle:
             np.random.shuffle(self.indices)
-            # Reorder data accordingly to preserve identical batching semantics if needed by caller
             self.data = [self.data[i] for i in self.indices]
 
     def _process_target(self, target):

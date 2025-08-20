@@ -3,21 +3,22 @@ import time
 import argparse
 import logging
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models import build_model
-from ferplus import FERPlusParameters, FERPlusDataset
-from definitions import device, emotion_table, emotion_names
+import torch
+import torch.optim as optim
+from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.sampler import WeightedRandomSampler
 
-from torchvision import models
+from models import build_model
+from ferplus import FERPlusParameters, FERPlusDataset
 
-idx2emotion = {v: k for k, v in emotion_table.items()}
+emotion_table = {
+    0: 'neutral', 1: 'happiness', 2: 'surprise', 3: 'sadness',
+    4: 'anger', 5: 'disgust', 6: 'fear', 7: 'contempt'
+}
+
 
 train_folders = ['FER2013Train']
 valid_folders = ['FER2013Valid']
@@ -47,11 +48,11 @@ def per_class_accuracy(model, dataloader, device):
     total   = {i: 0 for i in range(len(emotion_table))}
     
     with torch.no_grad():
-        for xb, yb in dataloader:
-            xb, yb = xb.to(device), yb.to(device)
-            logits = model(xb)
+        for x, y in dataloader:
+            x, y = x.to(device), y.to(device)
+            logits = model(x)
             preds = torch.argmax(logits, dim=1)
-            labels = torch.argmax(yb, dim=1)
+            labels = torch.argmax(y, dim=1)
 
             for p, t in zip(preds.cpu().numpy(), labels.cpu().numpy()):
                 total[t] += 1
@@ -67,8 +68,17 @@ def per_class_accuracy(model, dataloader, device):
     return accs
 
 
-def main(base_folder, training_mode='majority', model_name='VGG13',
-         max_epochs=100, batch_size=32, num_workers=0, device=None):
+def display_class_distribution(type, dataset):
+    class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
+    logging.info(f"{type} class distribution:")    
+    for idx, count in enumerate(class_counts):
+        cname = emotion_table[idx]
+        logging.info(f"  {cname:10s}: {count} ({count / len(dataset.labels) * 100:.2f}%)")
+    
+    logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
+
+
+def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, device=None):
 
     device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
     output_model_path = os.path.join(base_folder, 'models')
@@ -84,20 +94,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
     logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
 
     num_classes = len(emotion_table)
-
-    # Carrega ResNet18 pré-treinada
-    resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
-
-    # Ajusta a entrada para 1 canais (grayscale)
-    resnet.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-
-    # Ajusta a última camada (fc) para 8 classes do FER+
-    
-    num_features = resnet.fc.in_features
-    resnet.fc = nn.Linear(num_features, 8)
-
-    model = resnet.to(device)
-    #model = build_model(num_classes, model_name).to(device)
+    model = build_model(num_classes, model_name).to(device)
 
     train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False)
     eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True)
@@ -106,10 +103,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
     test_ds  = FERPlusDataset(base_folder, test_folders, "label.csv", eval_params)
 
-    logging.info("\t\tTrain\tVal\tTest")
-    for idx in range(num_classes):
-        cname = idx2emotion[idx]
-        logging.info(f"{cname:10s}\t{train_ds.per_emotion_count[idx]}\t{val_ds.per_emotion_count[idx]}\t{test_ds.per_emotion_count[idx]}")
+    display_class_distribution("Train", train_ds)
+    display_class_distribution("Validation", val_ds)
+    display_class_distribution("Test", test_ds)
 
     class_counts = torch.tensor(train_ds.per_emotion_count, dtype=torch.float)
     class_weights = 1.0 / class_counts
@@ -162,17 +158,17 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
         running_loss, running_acc, n_samples = 0.0, 0.0, 0
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{max_epochs}", unit="batch")
-        for xb, yb in pbar:
-            xb, yb = xb.to(device), yb.to(device)
+        for x, y in pbar:
+            x, y = x.to(device), y.to(device)
             optimizer.zero_grad(set_to_none=True)
-            logits = model(xb)
-            loss = loss_fn(training_mode, logits, yb)
+            logits = model(x)
+            loss = loss_fn(training_mode, logits, y)
             loss.backward()
             optimizer.step()
 
-            bs = xb.size(0)
+            bs = x.size(0)
             running_loss += loss.item() * bs
-            running_acc += accuracy_from_logits(logits.detach(), yb) * bs
+            running_acc += accuracy_from_logits(logits.detach(), y) * bs
             n_samples += bs
 
             # update tqdm bar with metrics
@@ -187,17 +183,16 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
         model.eval()
         with torch.no_grad():
             val_correct, val_count = 0.0, 0
-            for xb, yb in val_loader:
-                xb, yb = xb.to(device), yb.to(device)
-                logits = model(xb)
-                val_correct += accuracy_from_logits(logits, yb) * xb.size(0)
-                val_count += xb.size(0)
+            for x, y in val_loader:
+                x, y = x.to(device), y.to(device)
+                logits = model(x)
+                val_correct += accuracy_from_logits(logits, y) * x.size(0)
+                val_count += x.size(0)
             val_acc = val_correct / max(val_count, 1)
-
             val_class_accs = per_class_accuracy(model, val_loader, device)
             logging.info("  Val per-class accuracy:")
             for idx, acc in val_class_accs.items():
-                cname = idx2emotion[idx]
+                cname = emotion_table[idx]
                 logging.info(f"    {cname:10s}: {acc*100:.2f}%")
 
         test_run = False
@@ -207,11 +202,11 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
                        os.path.join(output_model_folder, f"model_{best_epoch}.pt"))
             with torch.no_grad():
                 test_correct, test_count = 0.0, 0
-                for xb, yb in test_loader:
-                    xb, yb = xb.to(device), yb.to(device)
-                    logits = model(xb)
-                    test_correct += accuracy_from_logits(logits, yb) * xb.size(0)
-                    test_count += xb.size(0)
+                for x, y in test_loader:
+                    x, y = x.to(device), y.to(device)
+                    logits = model(x)
+                    test_correct += accuracy_from_logits(logits, y) * x.size(0)
+                    test_count += x.size(0)
                 final_test_acc = test_correct / max(test_count, 1)
                 best_test_acc = max(best_test_acc, final_test_acc)
 
@@ -224,7 +219,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
             test_class_accs = per_class_accuracy(model, test_loader, device)
             logging.info("  Test per-class accuracy:")
             for idx, acc in test_class_accs.items():
-                cname = idx2emotion[idx]
+                cname = emotion_table[idx]
                 logging.info(f"    {cname:10s}: {acc*100:.2f}%")
 
 
