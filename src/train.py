@@ -77,7 +77,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
         filename=os.path.join(output_model_folder, "train.log"),
         filemode='w', level=logging.INFO
     )
-    logging.getLogger().addHandler(logging.StreamHandler())
+    #logging.getLogger().addHandler(logging.StreamHandler())
 
     logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
 
@@ -103,7 +103,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
     sample_weights = class_weights[labels]
 
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
-    
+
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=(device=='cuda'))
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
