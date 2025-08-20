@@ -88,7 +88,11 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
     # Carrega ResNet18 pré-treinada
     resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
 
+    # Ajusta a entrada para 1 canais (grayscale)
+    resnet.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+
     # Ajusta a última camada (fc) para 8 classes do FER+
+    
     num_features = resnet.fc.in_features
     resnet.fc = nn.Linear(num_features, 8)
 
