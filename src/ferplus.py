@@ -50,6 +50,7 @@ class FERPlusDataset(Dataset):
             self.do_flip = True
 
         self.data = []
+        self.labels = []
         self.per_emotion_count = np.zeros(self.emotion_count, dtype=np.int64)
 
         self.A, self.A_pinv = imgu.compute_norm_mat(self.width, self.height)
@@ -111,6 +112,7 @@ class FERPlusDataset(Dataset):
                         emotion = [float(i)/s for i in emotion]
                         #self.data.append((image_path, image_data, np.array(emotion, dtype=np.float32), face_rc))
                         self.data.append((image_path, np.array(emotion, dtype=np.float32), face_rc))
+                        self.labels.append(idx) 
                         self.per_emotion_count[idx] += 1
 
         self.indices = np.arange(len(self.data))
