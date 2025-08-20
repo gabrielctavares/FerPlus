@@ -15,6 +15,8 @@ from definitions import device, emotion_table, emotion_names
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.sampler import WeightedRandomSampler
 
+from torchvision import models
+
 idx2emotion = {v: k for k, v in emotion_table.items()}
 
 train_folders = ['FER2013Train']
@@ -82,7 +84,16 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
     logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
 
     num_classes = len(emotion_table)
-    model = build_model(num_classes, model_name).to(device)
+
+    # Carrega ResNet18 pré-treinada
+    resnet = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+
+    # Ajusta a última camada (fc) para 8 classes do FER+
+    num_features = resnet.fc.in_features
+    resnet.fc = nn.Linear(num_features, 8)
+
+    model = resnet.to(device)
+    #model = build_model(num_classes, model_name).to(device)
 
     train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False)
     eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True)
@@ -96,20 +107,34 @@ def main(base_folder, training_mode='majority', model_name='VGG13',
         cname = idx2emotion[idx]
         logging.info(f"{cname:10s}\t{train_ds.per_emotion_count[idx]}\t{val_ds.per_emotion_count[idx]}\t{test_ds.per_emotion_count[idx]}")
 
-    # Balanceamento via WeightedRandomSampler
     class_counts = torch.tensor(train_ds.per_emotion_count, dtype=torch.float)
     class_weights = 1.0 / class_counts
+    class_weights = class_weights / class_weights.sum() * len(class_counts)
     labels = torch.tensor(train_ds.labels, dtype=torch.long)
     sample_weights = class_weights[labels]
 
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),  
+        replacement=True
+    )
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=(device=='cuda'))
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
 
-    base_lr = getattr(model, 'learning_rate', 0.05)
+    # Debug: inspecionar um batch do train_loader
+    #data_iter = iter(train_loader)
+    #_, targets = next(data_iter)
 
+    # targets podem ser soft labels (probabilidades).
+    #labels = targets.argmax(dim=1)
+
+    # Conta frequência de classes nesse batch
+    #print("Distribuição de classes no primeiro batch:", torch.bincount(labels, minlength=8))
+
+
+    base_lr = getattr(model, 'learning_rate', 0.05)
 
     def lr_lambda(epoch):
         if epoch < 20:
