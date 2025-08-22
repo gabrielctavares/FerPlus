@@ -10,6 +10,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.sampler import WeightedRandomSampler
+from torch.utils.tensorboard import SummaryWriter
 
 from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
@@ -67,7 +68,25 @@ def per_class_accuracy(model, dataloader, device):
             accs[idx] = 0.0
     return accs
 
+def get_sampler(sampler_type, dataset):
+    if sampler_type is None:
+        return None
 
+    if sampler_type == "weighted":        
+        class_counts = torch.tensor(dataset.per_emotion_count, dtype=torch.float)
+        class_weights = 1.0 / class_counts
+        class_weights = class_weights / class_weights.sum() * len(class_counts)
+        labels = torch.tensor(dataset.labels, dtype=torch.long)
+        sample_weights = class_weights[labels]
+
+        return WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(sample_weights),  
+            replacement=True    
+        )
+    else:
+        raise ValueError(f"Unknown sampler type: {sampler_type}")
+    
 def display_class_distribution(type, dataset):
     class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
     logging.info(f"{type} class distribution:")    
@@ -78,9 +97,9 @@ def display_class_distribution(type, dataset):
     logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
 
 
-def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, device=None):
+def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None):
 
-    device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+    device = ('cuda' if torch.cuda.is_available() else 'cpu')
     output_model_path = os.path.join(base_folder, 'models')
     output_model_folder = os.path.join(output_model_path, f"{model_name}_{training_mode}")
     os.makedirs(output_model_folder, exist_ok=True)
@@ -89,6 +108,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         logging.FileHandler(os.path.join(output_model_folder, "train.log")),
         logging.StreamHandler()
     ])
+    
+    writer = SummaryWriter(log_dir=os.path.join(output_model_folder, "tensorboard"))
 
     logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
 
@@ -106,19 +127,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     display_class_distribution("Validation", val_ds)
     display_class_distribution("Test", test_ds)
 
-    class_counts = torch.tensor(train_ds.per_emotion_count, dtype=torch.float)
-    class_weights = 1.0 / class_counts
-    class_weights = class_weights / class_weights.sum() * len(class_counts)
-    labels = torch.tensor(train_ds.labels, dtype=torch.long)
-    sample_weights = class_weights[labels]
+    sampler = get_sampler(sampler_type, train_ds)
 
-    sampler = WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),  
-        replacement=True
-    )
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=(device=='cuda'))
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  shuffle=(sampler is None), num_workers=num_workers, pin_memory=(device=='cuda'))
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
 
@@ -133,7 +144,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     #print("Distribuição de classes no primeiro batch:", torch.bincount(labels, minlength=8))
 
 
-    base_lr = getattr(model, 'learning_rate', 0.05)
+    base_lr = getattr(model, 'learning_rate', 1e-4)
 
     def lr_lambda(epoch):
         if epoch < 20:
@@ -179,6 +190,10 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         train_loss = running_loss / max(n_samples, 1)
         train_acc = running_acc / max(n_samples, 1)        
 
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("Accuracy/train", train_acc, epoch)
+        writer.add_scalar("LearningRate", scheduler.get_last_lr()[0], epoch)
+
         model.eval()
         with torch.no_grad():
             val_correct, val_count = 0.0, 0
@@ -188,11 +203,14 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                 val_correct += accuracy_from_logits(logits, y) * x.size(0)
                 val_count += x.size(0)
             val_acc = val_correct / max(val_count, 1)
+            
+            writer.add_scalar("Accuracy/val", val_acc, epoch)
             val_class_accs = per_class_accuracy(model, val_loader, device)
             logging.info("  Val per-class accuracy:")
             for idx, acc in val_class_accs.items():
                 cname = emotion_table[idx]
-                logging.info(f"    {cname:10s}: {acc*100:.2f}%")
+                logging.info(f"    {cname:10s}: {acc*100:.2f}%")                
+                writer.add_scalar(f"ValClassAcc/{cname}", acc, epoch)
 
         test_run = False
         if val_acc > best_val_acc:
@@ -208,6 +226,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                     test_count += x.size(0)
                 final_test_acc = test_correct / max(test_count, 1)
                 best_test_acc = max(best_test_acc, final_test_acc)
+                
+                writer.add_scalar("Accuracy/test", final_test_acc, epoch)
+
 
         logging.info(f"Epoch {epoch}: {time.time() - start_time:.2f}s")
         logging.info(f"  train loss:\t{train_loss:.4f}")
@@ -220,8 +241,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             for idx, acc in test_class_accs.items():
                 cname = emotion_table[idx]
                 logging.info(f"    {cname:10s}: {acc*100:.2f}%")
+                writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
 
-
+    writer.close()
     logging.info(f"Best val acc: {best_val_acc*100:.2f}% (epoch {best_epoch})")
     logging.info(f"Test acc @ best val: {final_test_acc*100:.2f}%")
     logging.info(f"Best test acc: {best_test_acc*100:.2f}%")
@@ -234,7 +256,9 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--sampler", type=str, default=None)
     args = parser.parse_args()
-    main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers)
+    main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers, args.sampler)
+
 
 
