@@ -181,7 +181,6 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             running_acc += accuracy_from_logits(logits.detach(), y) * bs
             n_samples += bs
 
-            # update tqdm bar with metrics
             avg_loss = running_loss / n_samples
             avg_acc = running_acc / n_samples
             pbar.set_postfix({"loss": f"{avg_loss:.4f}", "acc": f"{avg_acc*100:.2f}%"})
@@ -216,7 +215,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         if val_acc > best_val_acc:
             best_val_acc, best_epoch, test_run = val_acc, epoch, True
             torch.save({'epoch': epoch, 'model_state': model.state_dict()},
-                       os.path.join(output_model_folder, f"model_{best_epoch}.pt"))
+                       os.path.join(output_model_folder, f"model_{training_mode}_{best_epoch}.pt"))
             with torch.no_grad():
                 test_correct, test_count = 0.0, 0
                 for x, y in test_loader:
