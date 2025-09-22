@@ -43,8 +43,8 @@ def loss_fn(training_mode, logits, targets):
 def validate(model, dataloader, device):
     model.eval()
     correct, total = 0, 0
-    correct_per_class = torch.zeros(len(emotion_table), dtype=torch.long)
-    total_per_class   = torch.zeros(len(emotion_table), dtype=torch.long)
+    correct_per_class = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
+    total_per_class   = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
 
     with torch.no_grad():
         for x, y in dataloader:
@@ -116,7 +116,11 @@ def display_class_distribution(type, dataset):
 
 
 def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None, results_file="resultados.xlsx"):
-    device = ('cuda' if torch.cuda.is_available() else 'cpu')
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    is_cuda = device.type == 'cuda'
+    pin_memory = is_cuda and (num_workers > 0)
+
     output_model_path = os.path.join(base_folder, 'models')
     output_model_folder = os.path.join(output_model_path, f"{model_name}_{training_mode}")
     os.makedirs(output_model_folder, exist_ok=True)
@@ -147,9 +151,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
 
     sampler = get_sampler(sampler_type, train_ds)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  shuffle=(sampler is None), num_workers=num_workers, pin_memory=(device=='cuda'))
-    val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
-    test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  shuffle=(sampler is None), num_workers=num_workers, pin_memory=pin_memory)
+    val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+    test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
     base_lr = getattr(model, 'learning_rate', 1e-4)
 
@@ -176,25 +180,28 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{max_epochs}", unit="batch")
         for x, y in pbar:
-            x, y = x.to(device), y.to(device)
+            x, y = x.to(device, non_blocking=is_cuda), y.to(device, non_blocking=is_cuda)
             optimizer.zero_grad(set_to_none=True)
             logits = model(x)
             loss = loss_fn(training_mode, logits, y)
             loss.backward()
             optimizer.step()
-
+            
             bs = x.size(0)
-            running_loss += loss.item() * bs
-            running_acc += accuracy_from_logits(logits.detach(), y) * bs
+
+            running_loss += loss.detach() * bs  
+            preds = logits.argmax(dim=1)
+            true  = y.argmax(dim=1)
+            running_acc += (preds == true).sum()
             n_samples += bs
 
-            avg_loss = running_loss / n_samples
-            avg_acc = running_acc / n_samples
+            avg_loss = (running_loss / n_samples).item()
+            avg_acc  = (running_acc.float() / n_samples).item()
             pbar.set_postfix({"loss": f"{avg_loss:.4f}", "acc": f"{avg_acc*100:.2f}%"})
 
         scheduler.step()
-        train_loss = running_loss / max(n_samples, 1)
-        train_acc = running_acc / max(n_samples, 1)        
+        train_loss = (running_loss / max(n_samples, 1)).item()
+        train_acc  = (running_acc.float() / max(n_samples, 1)).item()        
 
         writer.add_scalar("Loss/train", train_loss, epoch)
         writer.add_scalar("Accuracy/train", train_acc, epoch)
