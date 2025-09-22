@@ -7,17 +7,17 @@ if [ ! -d "$BASE_FOLDER" ]; then
     exit 1
 fi
 
-MODELS=("VGG13" "VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
+MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
 MODES=("majority" "probability" "crossentropy" "multi_target")
 
-EPOCHS=50
+EPOCHS=70
 BATCH_SIZE=64
 NUM_WORKERS=4
 
 for model in "${MODELS[@]}"; do
   for mode in "${MODES[@]}"; do
     echo "Executando: $model - $mode"
-    python train.py \
+    python ./src/train.py \
       -d "$BASE_FOLDER" \
       -m "$mode" \
       --model_name "$model" \
