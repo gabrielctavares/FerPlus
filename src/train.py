@@ -15,6 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
 
+
 emotion_table = {
     0: 'neutral', 1: 'happiness', 2: 'surprise', 3: 'sadness',
     4: 'anger', 5: 'disgust', 6: 'fear', 7: 'contempt'
@@ -38,35 +39,52 @@ def loss_fn(training_mode, logits, targets):
         raise ValueError(f"Unknown training_mode: {training_mode}")
     return loss
 
-def accuracy_from_logits(logits, targets):
-    pred = torch.argmax(logits, dim=1)
-    true = torch.argmax(targets, dim=1)
-    return (pred == true).float().mean().item()
 
-def per_class_accuracy(model, dataloader, device):
+def validate(model, dataloader, device):
     model.eval()
-    correct = {i: 0 for i in range(len(emotion_table))}
-    total   = {i: 0 for i in range(len(emotion_table))}
-    
+    correct, total = 0, 0
+    correct_per_class = torch.zeros(len(emotion_table), dtype=torch.long)
+    total_per_class   = torch.zeros(len(emotion_table), dtype=torch.long)
+
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
             logits = model(x)
-            preds = torch.argmax(logits, dim=1)
-            labels = torch.argmax(y, dim=1)
+            preds  = logits.argmax(dim=1)
+            labels = y.argmax(dim=1)
 
-            for p, t in zip(preds.cpu().numpy(), labels.cpu().numpy()):
-                total[t] += 1
-                if p == t:
-                    correct[t] += 1
-    
-    accs = {}
-    for idx in total:
-        if total[idx] > 0:
-            accs[idx] = correct[idx] / total[idx]
-        else:
-            accs[idx] = 0.0
-    return accs
+            correct += (preds == labels).sum().item()
+            total   += labels.size(0)
+
+            for i in range(len(emotion_table)):
+                mask = labels == i
+                total_per_class[i]   += mask.sum()
+                correct_per_class[i] += (preds[mask] == i).sum()
+
+    acc = correct / max(total, 1)
+    class_accs = {
+        i: (correct_per_class[i] / total_per_class[i]).item() if total_per_class[i] > 0 else 0.0
+        for i in range(len(emotion_table))
+    }
+    return acc, class_accs
+
+
+def save_results_to_excel(file_path, row_data):
+    import pandas as pd
+    try:
+        df = pd.read_excel(file_path, sheet_name="resultados")
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=row_data.keys())
+
+    df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+    with pd.ExcelWriter(file_path, mode="w", engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="resultados", index=False)
+
+
+def accuracy_from_logits(logits, targets):
+    pred = torch.argmax(logits, dim=1)
+    true = torch.argmax(targets, dim=1)
+    return (pred == true).float().mean().item()
 
 def get_sampler(sampler_type, dataset):
     if sampler_type is None:
@@ -97,12 +115,12 @@ def display_class_distribution(type, dataset):
     logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
 
 
-def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None):
-
+def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None, results_file="resultados.xlsx"):
     device = ('cuda' if torch.cuda.is_available() else 'cpu')
     output_model_path = os.path.join(base_folder, 'models')
     output_model_folder = os.path.join(output_model_path, f"{model_name}_{training_mode}")
     os.makedirs(output_model_folder, exist_ok=True)
+
 
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(asctime)s - %(message)s', handlers=[
         logging.FileHandler(os.path.join(output_model_folder, "train.log")),
@@ -133,26 +151,15 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=(device=='cuda'))
 
-    # Debug: inspecionar um batch do train_loader
-    #data_iter = iter(train_loader)
-    #_, targets = next(data_iter)
-
-    # targets podem ser soft labels (probabilidades).
-    #labels = targets.argmax(dim=1)
-
-    # Conta frequência de classes nesse batch
-    #print("Distribuição de classes no primeiro batch:", torch.bincount(labels, minlength=8))
-
-
     base_lr = getattr(model, 'learning_rate', 1e-4)
 
     def lr_lambda(epoch):
         if epoch < 20:
-            return 1.0      # 0.05
+            return 1.0
         elif epoch < 40:
-            return 0.5      # 0.025
+            return 0.5
         else:
-            return 0.1      # 0.005
+            return 0.1
 
     optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9)
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
@@ -160,7 +167,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     best_val_acc = 0.0
     best_epoch = 0
     best_test_acc = 0.0
-    final_test_acc = 0.0
+    best_row = None
 
     for epoch in range(max_epochs):        
         model.train()
@@ -181,7 +188,6 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             running_acc += accuracy_from_logits(logits.detach(), y) * bs
             n_samples += bs
 
-            # update tqdm bar with metrics
             avg_loss = running_loss / n_samples
             avg_acc = running_acc / n_samples
             pbar.set_postfix({"loss": f"{avg_loss:.4f}", "acc": f"{avg_acc*100:.2f}%"})
@@ -194,59 +200,57 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         writer.add_scalar("Accuracy/train", train_acc, epoch)
         writer.add_scalar("LearningRate", scheduler.get_last_lr()[0], epoch)
 
-        model.eval()
-        with torch.no_grad():
-            val_correct, val_count = 0.0, 0
-            for x, y in val_loader:
-                x, y = x.to(device), y.to(device)
-                logits = model(x)
-                val_correct += accuracy_from_logits(logits, y) * x.size(0)
-                val_count += x.size(0)
-            val_acc = val_correct / max(val_count, 1)
-            
-            writer.add_scalar("Accuracy/val", val_acc, epoch)
-            val_class_accs = per_class_accuracy(model, val_loader, device)
-            logging.info("  Val per-class accuracy:")
-            for idx, acc in val_class_accs.items():
-                cname = emotion_table[idx]
-                logging.info(f"    {cname:10s}: {acc*100:.2f}%")                
-                writer.add_scalar(f"ValClassAcc/{cname}", acc, epoch)
+        val_acc, val_class_accs = validate(model, val_loader, device)
+        writer.add_scalar("Accuracy/val", val_acc, epoch)        
 
-        test_run = False
+        test_class_accs = {}
         if val_acc > best_val_acc:
-            best_val_acc, best_epoch, test_run = val_acc, epoch, True
-            torch.save({'epoch': epoch, 'model_state': model.state_dict()},
-                       os.path.join(output_model_folder, f"model_{best_epoch}.pt"))
-            with torch.no_grad():
-                test_correct, test_count = 0.0, 0
-                for x, y in test_loader:
-                    x, y = x.to(device), y.to(device)
-                    logits = model(x)
-                    test_correct += accuracy_from_logits(logits, y) * x.size(0)
-                    test_count += x.size(0)
-                final_test_acc = test_correct / max(test_count, 1)
-                best_test_acc = max(best_test_acc, final_test_acc)
-                
-                writer.add_scalar("Accuracy/test", final_test_acc, epoch)
+            best_val_acc = val_acc
+            final_test_acc, test_class_accs = validate(model, test_loader, device)
+            writer.add_scalar("Accuracy/test", final_test_acc, epoch)
 
+            if final_test_acc > best_test_acc:
+                best_epoch = epoch
+                best_test_acc = final_test_acc
+
+                best_row = {
+                    "modelo": model_name,
+                    "training_type": training_mode,
+                    "epoch": epoch,
+                    "val_acc": val_acc,
+                    "test_acc": final_test_acc,
+                    **{f"val_{emotion_table[i]}": val_class_accs[i] for i in emotion_table},
+                    **{f"test_{emotion_table[i]}": test_class_accs[i] for i in emotion_table},
+                }
+
+                torch.save({'epoch': epoch, 'model_state': model.state_dict()},
+                            os.path.join(output_model_folder, f"best_model.pt"))
 
         logging.info(f"Epoch {epoch}: {time.time() - start_time:.2f}s")
         logging.info(f"  train loss:\t{train_loss:.4f}")
         logging.info(f"  train acc:\t{train_acc*100:.2f}%")
         logging.info(f"  val acc:\t{val_acc*100:.2f}%")
-        if test_run:
-            logging.info(f"  test acc:\t{final_test_acc*100:.2f}%")
-            test_class_accs = per_class_accuracy(model, test_loader, device)
-            logging.info("  Test per-class accuracy:")
+        logging.info(f"  val class acc:")
+        for idx, acc in val_class_accs.items():
+            cname = emotion_table[idx]
+            logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
+            writer.add_scalar(f"ValClassAcc/{cname}", acc, epoch)
+
+        if epoch == best_epoch:
+            logging.info(f"  test acc:\t{best_test_acc*100:.2f}%")
+            logging.info(f"  test class acc:")
             for idx, acc in test_class_accs.items():
                 cname = emotion_table[idx]
-                logging.info(f"    {cname:10s}: {acc*100:.2f}%")
+                logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
                 writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
 
     writer.close()
+
+    if best_row is not None:
+        save_results_to_excel(results_file, best_row)
+
     logging.info(f"Best val acc: {best_val_acc*100:.2f}% (epoch {best_epoch})")
-    logging.info(f"Test acc @ best val: {final_test_acc*100:.2f}%")
-    logging.info(f"Best test acc: {best_test_acc*100:.2f}%")
+    logging.info(f"Test acc @ best val: {best_test_acc*100:.2f}%")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -257,8 +261,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--sampler", type=str, default=None)
+    parser.add_argument("-r", "--results_file", type=str, default="resultados.xlsx")
     args = parser.parse_args()
-    main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers, args.sampler)
+    main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers, args.sampler, args.results_file)
 
 
 
