@@ -77,9 +77,8 @@ def save_results_to_excel(file_path, row_data):
         df = pd.DataFrame(columns=row_data.keys())
 
     df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
-    with pd.ExcelWriter(file_path, mode="w", engine="openpyxl") as writer:
-        df.to_excel(writer, sheet_name="resultados", index=False)
-
+    df.to_excel(file_path, sheet_name="resultados", index=False)
+ 
 
 def accuracy_from_logits(logits, targets):
     pred = torch.argmax(logits, dim=1)
