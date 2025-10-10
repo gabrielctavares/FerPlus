@@ -56,9 +56,6 @@ class VGG13(nn.Module):
         return x
 
 class ResNet18(nn.Module):
-    """
-    ResNet18 adaptada para FER+ 1x64x64 inputs e num_classes finais.
-    """
     learning_rate = 0.01
     # input_width = 64
     # input_height = 64
@@ -72,10 +69,7 @@ class ResNet18(nn.Module):
 
     def forward(self, x):
         return self.model(x)
-    
-    
-# implementar  VGG16, VGG19, DenseNet, EfficientNet, ConvNext
-# entrada com somente 1 canal e saida = num_classes
+        
 class VGG16(nn.Module):
     learning_rate = 0.01
     def __init__(self, num_classes):

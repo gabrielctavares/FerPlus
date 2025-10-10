@@ -1,6 +1,7 @@
 data/Fer2013Test/
 data/Fer2013Train/
 data/Fer2013Valid/
+data/*
 
 fer2013/fer2013.csv
 

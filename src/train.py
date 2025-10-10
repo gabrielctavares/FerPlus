@@ -9,11 +9,12 @@ import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import LambdaLR
-from torch.utils.data.sampler import WeightedRandomSampler
+from samplers import get_sampler
 from torch.utils.tensorboard import SummaryWriter
 
 from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
+from datetime import datetime
 
 
 emotion_table = {
@@ -71,13 +72,14 @@ def validate(model, dataloader, device):
 
 def save_results_to_excel(file_path, row_data):
     import pandas as pd
+    sheet_name = f"resultados - {datetime.now().strftime('%Y-%m-%d')}"
     try:
-        df = pd.read_excel(file_path, sheet_name="resultados")
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
     except FileNotFoundError:
         df = pd.DataFrame(columns=row_data.keys())
 
     df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
-    df.to_excel(file_path, sheet_name="resultados", index=False)
+    df.to_excel(file_path, sheet_name=sheet_name, index=False)
  
 
 def accuracy_from_logits(logits, targets):
@@ -85,25 +87,7 @@ def accuracy_from_logits(logits, targets):
     true = torch.argmax(targets, dim=1)
     return (pred == true).float().mean().item()
 
-def get_sampler(sampler_type, dataset):
-    if sampler_type is None:
-        return None
 
-    if sampler_type == "weighted":        
-        class_counts = torch.tensor(dataset.per_emotion_count, dtype=torch.float)
-        class_weights = 1.0 / class_counts
-        class_weights = class_weights / class_weights.sum() * len(class_counts)
-        labels = torch.tensor(dataset.labels, dtype=torch.long)
-        sample_weights = class_weights[labels]
-
-        return WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(sample_weights),  
-            replacement=True    
-        )
-    else:
-        raise ValueError(f"Unknown sampler type: {sampler_type}")
-    
 def display_class_distribution(type, dataset):
     class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
     logging.info(f"{type} class distribution:")    
@@ -132,7 +116,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     
     writer = SummaryWriter(log_dir=os.path.join(output_model_folder, "tensorboard"))
 
-    logging.info(f"Starting with training mode {training_mode} using {model_name} model and max epochs {max_epochs}.")
+    logging.info(f"Starting with training mode {training_mode} using {model_name} model, max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'}.")
 
     num_classes = len(emotion_table)
     model = build_model(num_classes, model_name).to(device)
@@ -148,7 +132,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     display_class_distribution("Validation", val_ds)
     display_class_distribution("Test", test_ds)
 
-    sampler = get_sampler(sampler_type, train_ds)
+    sampler = get_sampler(sampler_type, train_ds, verbose=True)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  shuffle=(sampler is None), num_workers=num_workers, pin_memory=pin_memory)
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
@@ -227,6 +211,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                     "test_acc": final_test_acc,
                     **{f"val_{emotion_table[i]}": val_class_accs[i] for i in emotion_table},
                     **{f"test_{emotion_table[i]}": test_class_accs[i] for i in emotion_table},
+                    "batch_size": batch_size,
+                    "sampler": sampler_type if sampler_type is not None else "none"
                 }
 
                 torch.save({'epoch': epoch, 'model_state': model.state_dict()},
@@ -249,6 +235,11 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                 cname = emotion_table[idx]
                 logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
                 writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
+
+        if epoch - best_epoch >= 10:
+            logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
+            break
+        
 
     writer.close()
 
