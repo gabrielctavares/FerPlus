@@ -70,16 +70,25 @@ def validate(model, dataloader, device):
     return acc, class_accs
 
 
+from datetime import datetime
+import pandas as pd
+import os
+
 def save_results_to_excel(file_path, row_data):
-    import pandas as pd
-    sheet_name = f"resultados - {datetime.now().strftime('%Y-%m-%d')}"
-    try:
-        df = pd.read_excel(file_path, sheet_name=sheet_name)
-    except FileNotFoundError:
+    sheet_name = f"resultados - {datetime.now().strftime('%Y-%m-%d')}"    
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+        except Exception:
+            df = pd.DataFrame(columns=row_data.keys())
+    else:
         df = pd.DataFrame(columns=row_data.keys())
 
     df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
-    df.to_excel(file_path, sheet_name=sheet_name, index=False)
+
+    with pd.ExcelWriter(file_path, engine='openpyxl', mode='a' if os.path.exists(file_path) else 'w') as writer:
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+
  
 
 def accuracy_from_logits(logits, targets):
