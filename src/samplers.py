@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import WeightedRandomSampler, RandomSampler, SequentialSampler, SubsetRandomSampler
 from ferplus import FERPlusDataset
 import logging
+import numpy as np
 
 SAMPLER_REGISTRY = {}
 
@@ -36,57 +37,151 @@ def get_sampler(sampler_type, dataset: FERPlusDataset, seed: int = 42, verbose: 
 
 
 @register_sampler("weighted")
-def weighted_sampler(dataset: FERPlusDataset, seed: int = 42, verbose: bool = False, **kwargs):
-    class_counts = torch.tensor(dataset.per_emotion_count, dtype=torch.float)
-    class_counts = torch.clamp(class_counts, min=1.0)
+def weighted_sampler(
+    dataset: FERPlusDataset, 
+    seed: int = 42, 
+    verbose: bool = False, 
+    epsilon: float = 1e-6,
+    **kwargs
+):
+    """
+    Weighted sampler para datasets com distribuições de labels suaves (soft labels).  
 
-    # pesos proporcionais ao inverso da frequência (sem normalizar)
-    class_weights = 1.0 / class_counts
+    Peso é calculado como a soma ponderada dos pesos das classes, onde o peso de cada classe é inversamente proporcional à sua frequência no dataset.  
+    Exemplo:
+        - Classe 0: 1000 amostras
+        - Classe 1: 500 amostras
+        - Classe 2: 250 amostras
+        - Classe 3: 250 amostras
+        - Classe 4: 100 amostras
+    Então, os pesos das classes seriam aproximadamente:
+        - Peso Classe 0: 1/1000 = 0.001
+        - Peso Classe 1: 1/500  = 0.002
+        - Peso Classe 2: 1/250  = 0.004
+        - Peso Classe 3: 1/250  = 0.004
+        - Peso Classe 4: 1/100  = 0.01
 
-    labels = dataset.labels if isinstance(dataset.labels, torch.Tensor) else torch.tensor(dataset.labels, dtype=torch.long)
-    sample_weights = class_weights[labels]
+    E uma amostra com label [0.1, 0.2, 0.3, 0.2, 0.2] teria peso:
+        Peso amostra = 0.1*0.001 + 0.2*0.002 + 0.3*0.004 + 0.2*0.004 + 0.2*0.01 = 0.0031
 
-    g = torch.Generator().manual_seed(seed)
+
+    """
+    labels_list = [t[1] for t in dataset.data]
+    labels_tensor = torch.from_numpy(np.array(labels_list, dtype=np.float32))
+  
+    class_counts = torch.tensor(dataset.per_emotion_count, dtype=torch.float32)
+    class_weights = 1.0 / (class_counts + epsilon)
+    class_weights = class_weights / class_weights.sum() * len(class_counts)
+
+    if verbose:
+        print(f"Shape do labels_tensor: {labels_tensor.shape}")
+        print(f"Pesos das classes: {class_weights}")
+
+    sample_weights = (labels_tensor * class_weights).sum(dim=1)
+    
+    if torch.any(sample_weights <= 0):
+        if verbose:
+            print("Aviso: Encontrados pesos não-positivos. Aplicando correção.")
+        sample_weights = torch.clamp(sample_weights, min=epsilon)
+    
+    # Normaliza os pesos para soma = 1 (opcional, mas recomendado)
+    #sample_weights = sample_weights / sample_weights.sum()
+
+    if verbose:
+        print(f"Estatísticas dos sample_weights:")
+        print(f"  - Min: {sample_weights.min():.6f}")
+        print(f"  - Max: {sample_weights.max():.6f}")
+        print(f"  - Mean: {sample_weights.mean():.6f}")
+        print(f"  - Std: {sample_weights.std():.6f}")
+        print(f"Exemplos de sample_weights: {sample_weights[:6].tolist()}")
+
+    generator = torch.Generator().manual_seed(seed)
+
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(labels_list),
+        replacement=True,
+        generator=generator
+    )
+
+
+@register_sampler("weighted_soft")
+def weighted_soft_sampler(
+    dataset: FERPlusDataset, 
+    seed: int = 42, 
+    verbose: bool = False, 
+    epsilon: float = 1e-6,
+    **kwargs
+):
+    """
+     Semelhante ao weighted_sampler, mas o peso das classes é calculado com base na soma das contribuições de cada classe em todas as amostras.
+    """
+   
+    labels_list = [t[1] for t in dataset.data]
+    labels_tensor = torch.from_numpy(np.array(labels_list, dtype=np.float32))
+
+    if verbose:
+        print(f"Total de amostras no dataset: {len(labels_list)}")
+        print(f"Shape dos labels: {labels_tensor.shape}")
+        print(f"Exemplo de label: {labels_tensor[0]}")
+        print(f"Soma do exemplo: {labels_tensor[0].sum():.4f}")  # Deve ser ~1.0
+
+    total_class_contributions = labels_tensor.sum(dim=0)
+    
+    if verbose:
+        print(f"Contribuições totais por classe: {total_class_contributions}")
+
+    class_weights = 1.0 / (total_class_contributions + epsilon)
+    
+    class_weights = class_weights / class_weights.sum() * len(class_weights)
+
+    if verbose:
+        print(f"Pesos das classes: {class_weights}")
+
+    sample_weights = (labels_tensor * class_weights).sum(dim=1)    
+    sample_weights = torch.clamp(sample_weights, min=epsilon)
+
+    
+
+    if verbose:
+        print(f"Estatísticas dos sample_weights:")
+        print(f"  - Min: {sample_weights.min():.6f}")
+        print(f"  - Max: {sample_weights.max():.6f}") 
+        print(f"  - Mean: {sample_weights.mean():.6f}")
+        print(f"  - Std: {sample_weights.std():.6f}")
+        
+        print("\nExemplos de amostras e seus pesos:")
+        for i in range(min(5, len(sample_weights))):
+            print(f"  Amostra {i}: label={labels_tensor[i]}, peso={sample_weights[i]:.6f}")
+
+    generator = torch.Generator().manual_seed(seed)
 
     sampler = torch.utils.data.WeightedRandomSampler(
         weights=sample_weights,
-        num_samples=len(sample_weights),
+        num_samples=len(labels_list),
         replacement=True,
-        generator=g
+        generator=generator
     )
 
-    if verbose:
-        logging.info("[weighted] Sampler configurado com balanceamento inverso.")
-        _log_class_distribution(labels, sampler=sampler, name="weighted")
-
     return sampler
+
 
 @register_sampler("balanced_per_class")
-def balanced_per_class_sampler(dataset: FERPlusDataset, seed: int = 42, verbose: bool = False, **kwargs):
-    labels = torch.tensor(dataset.labels, dtype=torch.long)
-    class_counts = torch.tensor(dataset.per_emotion_count, dtype=torch.long)
-    samples_per_class = class_counts[class_counts > 0].min().item()
-
-    g = torch.Generator().manual_seed(seed)
-    indices = []
-
-    for c in range(len(class_counts)):
-        class_indices = torch.where(labels == c)[0]
-        if len(class_indices) == 0:
-            logging.warning(f"[balanced_per_class] Classe {c} ignorada (sem amostras).")
-            continue
-
-        perm = torch.randperm(len(class_indices), generator=g)
-        chosen = class_indices[perm[:samples_per_class]]
-        indices.append(chosen)
-
-    indices = torch.cat(indices)
-    indices = indices[torch.randperm(len(indices), generator=g)]
-
-    sampler = SubsetRandomSampler(indices)
-
-    if verbose:
-        logging.info(f"[balanced_per_class] {len(indices)} amostras (~ {samples_per_class} por classe).")
-        _log_class_distribution(labels, indices, name="balanced_per_class")
-
-    return sampler
+def weighted_balanced_sampler(dataset: FERPlusDataset, seed: int = 42, verbose: bool = False, **kwargs):
+    labels_list = [t[1] for t in dataset.data]
+    labels_tensor = torch.from_numpy(np.array(labels_list, dtype=np.float32))
+    dominant_classes = torch.argmax(labels_tensor, dim=1)
+    
+    # Peso igual para todas as classes
+    class_weights = torch.ones(len(dataset.per_emotion_count), dtype=torch.float32)
+    class_weights = class_weights / class_weights.sum()
+    
+    sample_weights = class_weights[dominant_classes]
+    
+    generator = torch.Generator().manual_seed(seed)
+    return torch.utils.data.WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(labels_list),
+        replacement=True,
+        generator=generator
+    )

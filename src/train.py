@@ -1,3 +1,4 @@
+from collections import Counter
 import os
 import time
 import argparse
@@ -130,12 +131,14 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     num_classes = len(emotion_table)
     model = build_model(num_classes, model_name).to(device)
 
-    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False)
-    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True)
+    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
+    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True, False)
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
     test_ds  = FERPlusDataset(base_folder, test_folders, "label.csv", eval_params)
+
+    
 
     display_class_distribution("Train", train_ds)
     display_class_distribution("Validation", val_ds)
@@ -146,6 +149,18 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler,  shuffle=(sampler is None), num_workers=num_workers, pin_memory=pin_memory)
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+
+    from collections import Counter
+    sampled_labels = []
+    for i, (_, y) in enumerate(train_loader):        
+        logged_labels = y.argmax(dim=1) if y.dim() > 1 else y
+        sampled_labels.extend([int(label) for label in logged_labels])
+        if i > 50:  # pega ~50 batches
+            break
+
+    print(Counter(sampled_labels))
+    print(train_loader.dataset[0][1])  
+    print(f"Sampler ativo: {type(train_loader.sampler).__name__}")
 
     base_lr = getattr(model, 'learning_rate', 1e-3)
 
