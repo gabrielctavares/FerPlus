@@ -1,4 +1,5 @@
 from collections import Counter
+import itertools
 import os
 import time
 import argparse
@@ -16,14 +17,16 @@ from torch.utils.tensorboard import SummaryWriter
 from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
 from datetime import datetime
+from sklearn.metrics import confusion_matrix
+import matplotlib.pyplot as plt
 
+from log_util import save_results_to_excel, display_class_distribution, plot_confusion_matrix, display_sampler_distribution
 inicio = datetime.now()
 
 emotion_table = {
     0: 'neutral', 1: 'happiness', 2: 'surprise', 3: 'sadness',
     4: 'anger', 5: 'disgust', 6: 'fear', 7: 'contempt'
 }
-
 
 train_folders = ['FER2013Train']
 valid_folders = ['FER2013Valid']
@@ -48,7 +51,9 @@ def validate(model, dataloader, device):
     correct, total = 0, 0
     correct_per_class = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
     total_per_class   = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
-
+    all_labels = []
+    all_preds = []
+    
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
@@ -58,55 +63,23 @@ def validate(model, dataloader, device):
 
             correct += (preds == labels).sum().item()
             total   += labels.size(0)
+            all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(preds.cpu().numpy())
 
             for i in range(len(emotion_table)):
                 mask = labels == i
                 total_per_class[i]   += mask.sum()
                 correct_per_class[i] += (preds[mask] == i).sum()
+            
 
     acc = correct / max(total, 1)
     class_accs = {
         i: (correct_per_class[i] / total_per_class[i]).item() if total_per_class[i] > 0 else 0.0
         for i in range(len(emotion_table))
-    }
-    return acc, class_accs
+    }    
 
-
-from datetime import datetime
-import pandas as pd
-import os
-
-def save_results_to_excel(file_path, row_data):
-    sheet_name = f"resultados - {inicio.strftime('%Y-%m-%d')}"
-
-    if os.path.exists(file_path):
-        try:
-            df_existente = pd.read_excel(file_path, sheet_name=sheet_name)
-        except ValueError:
-            df_existente = pd.DataFrame(columns=row_data.keys())
-    else:
-        df_existente = pd.DataFrame(columns=row_data.keys())
-
-    df_final = pd.concat([df_existente, pd.DataFrame([row_data])], ignore_index=True)
-
-    mode = 'a' if os.path.exists(file_path) else 'w'
-    with pd.ExcelWriter(file_path, engine='openpyxl', mode=mode, if_sheet_exists='replace') as writer:
-        df_final.to_excel(writer, sheet_name=sheet_name, index=False)
-
-def accuracy_from_logits(logits, targets):
-    pred = torch.argmax(logits, dim=1)
-    true = torch.argmax(targets, dim=1)
-    return (pred == true).float().mean().item()
-
-
-def display_class_distribution(type, dataset):
-    class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
-    logging.info(f"{type} class distribution:")    
-    for idx, count in enumerate(class_counts):
-        cname = emotion_table[idx]
-        logging.info(f"  {cname:10s}: {count} ({count / len(dataset.labels) * 100:.2f}%)")
-    
-    logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
+    cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
+    return acc, class_accs, cm
 
 
 def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None, results_file="resultados.xlsx"):
@@ -115,7 +88,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     is_cuda = device.type == 'cuda'
     pin_memory = is_cuda and (num_workers > 0)
 
-    output_model_path = os.path.join(base_folder, 'models')
+    output_model_path = os.path.join(base_folder, 'results', 'models')
     output_model_folder = os.path.join(output_model_path, f"{model_name}_{training_mode}")
     os.makedirs(output_model_folder, exist_ok=True)
 
@@ -137,13 +110,11 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
-    test_ds  = FERPlusDataset(base_folder, test_folders, "label.csv", eval_params)
+    test_ds  = FERPlusDataset(base_folder, test_folders, "label.csv", eval_params)    
 
-    
-
-    display_class_distribution("Train", train_ds)
-    display_class_distribution("Validation", val_ds)
-    display_class_distribution("Test", test_ds)
+    display_class_distribution("Train", train_ds, emotion_table)
+    display_class_distribution("Validation", val_ds, emotion_table)
+    display_class_distribution("Test", test_ds, emotion_table)
 
     sampler = get_sampler(sampler_type, train_ds, verbose=True)
 
@@ -151,17 +122,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
-    from collections import Counter
-    sampled_labels = []
-    for i, (_, y) in enumerate(train_loader):        
-        logged_labels = y.argmax(dim=1) if y.dim() > 1 else y
-        sampled_labels.extend([int(label) for label in logged_labels])
-        if i > 50:  # pega ~50 batches
-            break
-
-    print(Counter(sampled_labels))
-    print(train_loader.dataset[0][1])  
-    print(f"Sampler ativo: {type(train_loader.sampler).__name__}")
+    display_sampler_distribution(train_loader)
 
     base_lr = getattr(model, 'learning_rate', 1e-3)
 
@@ -179,6 +140,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     best_val_acc = 0.0
     best_epoch = 0
     best_test_acc = 0.0
+    best_cm = None
     best_row = None
 
     for epoch in range(max_epochs):        
@@ -215,18 +177,19 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         writer.add_scalar("Accuracy/train", train_acc, epoch)
         writer.add_scalar("LearningRate", scheduler.get_last_lr()[0], epoch)
 
-        val_acc, val_class_accs = validate(model, val_loader, device)
+        val_acc, val_class_accs, _ = validate(model, val_loader, device)
         writer.add_scalar("Accuracy/val", val_acc, epoch)        
 
         test_class_accs = {}
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            final_test_acc, test_class_accs = validate(model, test_loader, device)
+            final_test_acc, test_class_accs, test_cm = validate(model, test_loader, device)
             writer.add_scalar("Accuracy/test", final_test_acc, epoch)
 
             if final_test_acc > best_test_acc:
                 best_epoch = epoch
                 best_test_acc = final_test_acc
+                best_cm = test_cm
 
                 best_row = {
                     "modelo": model_name,
@@ -240,8 +203,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                     "sampler": sampler_type if sampler_type is not None else "none"
                 }
 
+                
                 torch.save({'epoch': epoch, 'model_state': model.state_dict()},
-                            os.path.join(output_model_folder, f"best_model.pt"))
+                            os.path.join(output_model_folder, f"best_model_{sampler_type}_{batch_size}.pt"))
 
         logging.info(f"Epoch {epoch}: {time.time() - start_time:.2f}s")
         logging.info(f"  train loss:\t{train_loss:.4f}")
@@ -266,6 +230,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             break
         
 
+    if best_cm is not None:
+        fig = plot_confusion_matrix(best_cm, list(emotion_table.values()), os.path.join(output_model_folder, f"confusion_matrix_{sampler_type}_{batch_size}.png"))
+        writer.add_figure("ConfusionMatrix/test", fig, epoch)
     writer.close()
 
     if best_row is not None:
@@ -283,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--sampler", type=str, default=None)
-    parser.add_argument("-r", "--results_file", type=str, default="resultados.xlsx")
+    parser.add_argument("-r", "--results_file", type=str, default=f"resultados_{datetime.now().strftime('%Y%m%d')}.xlsx")
     args = parser.parse_args()
     main(args.base_folder, args.training_mode, args.model_name, args.epochs, args.batch_size, args.num_workers, args.sampler, args.results_file)
 
