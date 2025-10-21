@@ -38,9 +38,8 @@ def display_class_distribution(type, dataset, emotion_table):
     logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
 
 
-def plot_confusion_matrix(labels, preds, class_names, save_path=None):
-    """Gera e retorna um gráfico Matplotlib da matriz de confusão."""
-    cm = confusion_matrix(labels, preds)
+def plot_confusion_matrix(cm, class_names, save_path=None):
+    """Gera e retorna um gráfico Matplotlib a partir de uma matriz de confusão já calculada."""
     fig = plt.figure(figsize=(6, 6))
     plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
     plt.title("Matriz de Confusão")

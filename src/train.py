@@ -21,7 +21,6 @@ from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 
 from log_util import save_results_to_excel, display_class_distribution, plot_confusion_matrix, display_sampler_distribution
-inicio = datetime.now()
 
 emotion_table = {
     0: 'neutral', 1: 'happiness', 2: 'surprise', 3: 'sadness',
