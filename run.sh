@@ -9,7 +9,7 @@ fi
 
 MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
 MODES=("majority" "probability" "crossentropy" "multi_target")
-SAMPLERS=("weighted")
+SAMPLERS=("weighted" "none")
 
 EPOCHS=70
 BATCH_SIZE=64
