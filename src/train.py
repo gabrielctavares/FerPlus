@@ -62,18 +62,14 @@ def validate(model, dataloader, device, training_mode='majority'):
 
             if training_mode == "multi_target":
                 preds = (torch.sigmoid(logits) > 0.5).long()
-                y_bool = y.bool()
+                y_bool = y > 0.5
 
-                logging.info(f"Predições: {preds}, Verdadeiros: {y_bool}")
-                # --- Acurácia global (proporção de bits corretos) ---
                 correct += (preds == y_bool).sum().item()
                 total   += y.numel()
 
-                # --- Acurácia por classe (por coluna) ---
-                correct_per_class += (preds == y_bool).sum(dim=0)
+                correct_per_class += (preds & y_bool).sum(dim=0)
                 total_per_class   += y_bool.sum(dim=0)
 
-                # Salva resultados para confusão binária por classe
                 all_labels.extend(y_bool.cpu().numpy().reshape(-1))
                 all_preds.extend(preds.cpu().numpy().reshape(-1))
 
@@ -108,20 +104,9 @@ def validate(model, dataloader, device, training_mode='majority'):
 import torch
 
 def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, mode: str = "any", threshold: float = 0.5) -> torch.Tensor:
-    """
-    Calcula a acurácia para classificações multi-label a partir dos logits.
-        mode (str): 
-            "any"   - conta 1 se acertar ao menos uma classe verdadeira.
-            "all"   - conta 1 se todas as classes estiverem corretas.
-            "ratio" - média da proporção de classes corretas por amostra.
-        threshold (float): limiar para converter as probabilidades em 0/1.
-    """
     preds = torch.sigmoid(logits) > threshold
     y_bool = y == 1.0
 
-    #logging.info(f"Logits: {logits}")
-    #logging.info(f"VerdadeirasOG: {y}")
-    #logging.info(f"Predições: {preds}, Verdadeiros: {y_bool}")
     if mode == "any":
         correct = (preds & y_bool).any(dim=1).float().sum()
 
