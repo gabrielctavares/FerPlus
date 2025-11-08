@@ -42,32 +42,52 @@ def loss_fn(training_mode, logits, targets):
     return loss
 
 
-def validate(model, dataloader, device):
+def validate(model, dataloader, device, training_mode='majority'):
     model.eval()
+    num_classes = len(emotion_table)
+
     correct, total = 0, 0
-    correct_per_class = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
-    total_per_class   = torch.zeros(len(emotion_table), dtype=torch.long, device=device)
+    correct_per_class = torch.zeros(num_classes, dtype=torch.long, device=device)
+    total_per_class   = torch.zeros(num_classes, dtype=torch.long, device=device)
 
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
             logits = model(x)
-            preds  = logits.argmax(dim=1)
-            labels = y.argmax(dim=1)
 
-            correct += (preds == labels).sum().item()
-            total   += labels.size(0)
+            if training_mode == "multi_target":
+                preds = (torch.sigmoid(logits) > 0.5).long()
+                y_bool = y.bool()
 
-            for i in range(len(emotion_table)):
-                mask = labels == i
-                total_per_class[i]   += mask.sum()
-                correct_per_class[i] += (preds[mask] == i).sum()
+                # --- Acurácia global (proporção de bits corretos) ---
+                correct += (preds == y_bool).sum().item()
+                total   += y.numel()
 
+                # --- Acurácia por classe (por coluna) ---
+                correct_per_class += (preds == y_bool).sum(dim=0)
+                total_per_class   += y_bool.sum(dim=0)
+
+            else:  # modo single-label
+                preds  = logits.argmax(dim=1)
+                labels = y.argmax(dim=1)
+
+                correct += (preds == labels).sum().item()
+                total   += labels.size(0)
+
+                for i in range(num_classes):
+                    mask = labels == i
+                    total_per_class[i]   += mask.sum()
+                    correct_per_class[i] += (preds[mask] == i).sum()
+
+    # --- Acurácia geral ---
     acc = correct / max(total, 1)
+
+    # --- Acurácia por classe ---
     class_accs = {
-        i: (correct_per_class[i] / total_per_class[i]).item() if total_per_class[i] > 0 else 0.0
-        for i in range(len(emotion_table))
+        emotion_table[i]: (correct_per_class[i] / total_per_class[i]).item() if total_per_class[i] > 0 else 0.0
+        for i in range(num_classes)
     }
+
     return acc, class_accs
 
 
@@ -96,6 +116,37 @@ def accuracy_from_logits(logits, targets):
     pred = torch.argmax(logits, dim=1)
     true = torch.argmax(targets, dim=1)
     return (pred == true).float().mean().item()
+
+import torch
+
+def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, mode: str = "any", threshold: float = 0.5) -> torch.Tensor:
+    """
+    Calcula a acurácia para classificações multi-label a partir dos logits.
+        mode (str): 
+            "any"   - conta 1 se acertar ao menos uma classe verdadeira.
+            "all"   - conta 1 se todas as classes estiverem corretas.
+            "ratio" - média da proporção de classes corretas por amostra.
+        threshold (float): limiar para converter as probabilidades em 0/1.
+    """
+    preds = torch.sigmoid(logits) > threshold
+    y_bool = y.bool()
+
+    if mode == "any":
+        correct = (preds & y_bool).any(dim=1).float().sum()
+
+    elif mode == "all":
+        correct = (preds == y_bool).all(dim=1).float().sum()
+
+    elif mode == "ratio":
+        # proporção de classes verdadeiras acertadas
+        per_sample = ((preds & y_bool).sum(dim=1) / y_bool.sum(dim=1).clamp(min=1))
+        correct = per_sample.sum()
+
+    else:
+        raise ValueError(f"Modo inválido: {mode}. Use 'any', 'all' ou 'ratio'.")
+
+    return correct
+
 
 
 def display_class_distribution(type, dataset):
@@ -132,13 +183,12 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     model = build_model(num_classes, model_name).to(device)
 
     train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
-    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True, False)
+    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, True, False)
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
     test_ds  = FERPlusDataset(base_folder, test_folders, "label.csv", eval_params)
-
-    
+   
 
     display_class_distribution("Train", train_ds)
     display_class_distribution("Validation", val_ds)
@@ -159,7 +209,6 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             break
 
     print(Counter(sampled_labels))
-    print(train_loader.dataset[0][1])  
     print(f"Sampler ativo: {type(train_loader.sampler).__name__}")
 
     base_lr = getattr(model, 'learning_rate', 1e-3)
@@ -195,11 +244,17 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             optimizer.step()
             
             bs = x.size(0)
-
             running_loss += loss.detach() * bs  
-            preds = logits.argmax(dim=1)
-            true  = y.argmax(dim=1)
-            running_acc += (preds == true).sum()
+
+            if training_mode == 'multi_target':
+                correct = multi_hot_accuracy(logits, y, mode="any")
+                running_acc += correct
+            else:
+                preds = logits.argmax(dim=1)
+                true  = y.argmax(dim=1)
+                running_acc += (preds == true).sum()
+
+
             n_samples += bs
 
             avg_loss = (running_loss / n_samples).item()
