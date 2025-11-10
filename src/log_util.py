@@ -6,25 +6,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import itertools
 from collections import Counter
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay
 
 
 def save_results_to_excel(file_path, row_data):
-    """Salva ou atualiza os resultados em um arquivo Excel."""
-    sheet_name = "resultados"
+    import pandas as pd
+    try:
+        df = pd.read_excel(file_path, sheet_name="resultados")
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=row_data.keys())
 
-    if os.path.exists(file_path):
-        try:
-            df_existente = pd.read_excel(file_path, sheet_name=sheet_name)
-        except ValueError:
-            df_existente = pd.DataFrame(columns=row_data.keys())
-    else:
-        df_existente = pd.DataFrame(columns=row_data.keys())
-
-    df_final = pd.concat([df_existente, pd.DataFrame([row_data])], ignore_index=True)
-    mode = 'a' if os.path.exists(file_path) else 'w'
-    with pd.ExcelWriter(file_path, engine='openpyxl', mode=mode, if_sheet_exists='replace') as writer:
-        df_final.to_excel(writer, sheet_name=sheet_name, index=False)
+    df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+    df.to_excel(file_path, sheet_name="resultados", index=False)
     logging.info(f"✅ Resultados salvos em {file_path}")
 
 
@@ -39,34 +32,19 @@ def display_class_distribution(type, dataset, emotion_table):
 
 
 def plot_confusion_matrix(cm, class_names, save_path=None):
-    """Gera e retorna um gráfico Matplotlib a partir de uma matriz de confusão já calculada."""
-    fig = plt.figure(figsize=(6, 6))
-    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plot = ConfusionMatrixDisplay(cm, display_labels=class_names).plot(cmap=plt.cm.Blues)
     plt.title("Matriz de Confusão")
-    plt.colorbar()
-    tick_marks = np.arange(len(class_names))
-    plt.xticks(tick_marks, class_names, rotation=45)
-    plt.yticks(tick_marks, class_names)
-
-    cm_norm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
-    cm_norm = np.nan_to_num(cm_norm)
-    thresh = cm_norm.max() / 2.
-
-    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        color = "white" if cm_norm[i, j] > thresh else "black"
-        plt.text(j, i, f"{cm_norm[i, j]:.2f}", horizontalalignment="center", color=color)
-
-    plt.ylabel("Real")
     plt.xlabel("Predito")
+    plt.ylabel("Real")
+    plt.xticks(rotation=45)
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, bbox_inches="tight", dpi=200)
         logging.info(f"✅ Matriz de confusão salva em: {save_path}")
-        plt.close(fig)
+        plt.close(plot.figure_)
 
-    return fig
-
+    return plot.figure_
 
 def display_sampler_distribution(train_loader, sampler_name=None, num_batches=50):
     """Mostra a distribuição de classes amostradas por um DataLoader."""
