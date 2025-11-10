@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import itertools
 from collections import Counter
 from sklearn.metrics import ConfusionMatrixDisplay
-
+import seaborn as sns
 
 def save_results_to_excel(file_path, row_data):
     import pandas as pd
@@ -32,19 +32,19 @@ def display_class_distribution(type, dataset, emotion_table):
 
 
 def plot_confusion_matrix(cm, class_names, save_path=None):
-    plot = ConfusionMatrixDisplay(cm, display_labels=class_names).plot(cmap=plt.cm.Blues)
-    plt.title("Matriz de Confusão")
-    plt.xlabel("Predito")
-    plt.ylabel("Real")
-    plt.xticks(rotation=45)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names, ax=ax)
+    ax.set_title("Matriz de Confusão")
+    ax.set_xlabel("Predito")
+    ax.set_ylabel("Real")
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, bbox_inches="tight", dpi=200)
-        logging.info(f"✅ Matriz de confusão salva em: {save_path}")
-        plt.close(plot.figure_)
-
-    return plot.figure_
+        fig.savefig(save_path, bbox_inches="tight", dpi=200)
+        logging.info(f"✅ Matriz de confusão salva em: {save_path}")           
+    return fig
 
 def display_sampler_distribution(train_loader, sampler_name=None, num_batches=50):
     """Mostra a distribuição de classes amostradas por um DataLoader."""

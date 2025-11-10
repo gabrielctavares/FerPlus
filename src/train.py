@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from models import build_model
 from ferplus import FERPlusParameters, FERPlusDataset
 from datetime import datetime
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import multilabel_confusion_matrix, confusion_matrix
 import matplotlib.pyplot as plt
 
 from log_util import save_results_to_excel, display_class_distribution, plot_confusion_matrix, display_sampler_distribution
@@ -62,7 +62,7 @@ def validate(model, dataloader, device, training_mode='majority'):
 
             if training_mode == "multi_target":
                 preds = (torch.sigmoid(logits) > 0.5).long()
-                y_bool = y > 0.5
+                y_bool = (y > 0.5).long()
 
                 correct += (preds == y_bool).sum().item()
                 total   += y.numel()
@@ -70,10 +70,10 @@ def validate(model, dataloader, device, training_mode='majority'):
                 correct_per_class += (preds & y_bool).sum(dim=0)
                 total_per_class   += y_bool.sum(dim=0)
 
-                all_labels.extend(y_bool.cpu().numpy().reshape(-1))
-                all_preds.extend(preds.cpu().numpy().reshape(-1))
+                all_labels.append(y_bool.cpu().numpy())
+                all_preds.append(preds.cpu().numpy())
 
-            else:  # modo single-label
+            else:
                 preds  = logits.argmax(dim=1)
                 labels = y.argmax(dim=1)
 
@@ -85,44 +85,58 @@ def validate(model, dataloader, device, training_mode='majority'):
                     total_per_class[i]   += mask.sum()
                     correct_per_class[i] += (preds[mask] == i).sum()
 
-                all_labels.extend(labels.cpu().numpy())
-                all_preds.extend(preds.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+                all_preds.append(preds.cpu().numpy())
 
-    # --- Acurácia geral ---
     acc = correct / max(total, 1)
 
-    # --- Acurácia por classe ---
     class_accs = {
-        emotion_table[i]: (correct_per_class[i] / total_per_class[i]).item() if total_per_class[i] > 0 else 0.0
+        i: (correct_per_class[i] / total_per_class[i]).item()
+        if total_per_class[i] > 0 else 0.0
         for i in range(num_classes)
     }
 
-    # --- Matriz de confusão ---
-    cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
+    # === Matriz de confusão ===
+    if training_mode == "multi_target":
+        all_labels = np.vstack(all_labels)
+        all_preds  = np.vstack(all_preds)
+        mcm = multilabel_confusion_matrix(all_labels, all_preds)
+        # Agrega as diagonais para ter uma visão geral N×N (opcional)
+        cm = np.zeros((num_classes, num_classes), dtype=np.float32)
+        for i in range(num_classes):
+            tn, fp, fn, tp = mcm[i].ravel()
+            cm[i, i] = tp
+            cm[i, :] = [fp] * num_classes  # simplificação visual opcional
+    else:
+        all_labels = np.concatenate(all_labels)
+        all_preds  = np.concatenate(all_preds)
+        cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
 
     return acc, class_accs, cm
-import torch
 
 def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, mode: str = "any", threshold: float = 0.5) -> torch.Tensor:
     preds = torch.sigmoid(logits) > threshold
-    y_bool = y == 1.0
+    y_bool = y > 0.5
 
     if mode == "any":
+        # pelo menos uma label correta prevista
         correct = (preds & y_bool).any(dim=1).float().sum()
 
     elif mode == "all":
+        # todas labels corretas previstas
         correct = (preds == y_bool).all(dim=1).float().sum()
 
     elif mode == "ratio":
-        # proporção de classes verdadeiras acertadas
-        per_sample = ((preds & y_bool).sum(dim=1) / y_bool.sum(dim=1).clamp(min=1))
+        # proporção de classes corretas por amostra
+        # soma somente classes positivas no alvo
+        per_sample = ((preds & y_bool).sum(dim=1).float() /
+                      y_bool.sum(dim=1).clamp(min=1).float())
         correct = per_sample.sum()
 
     else:
         raise ValueError(f"Modo inválido: {mode}. Use 'any', 'all' ou 'ratio'.")
 
     return correct
-
 
 def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None, results_file="resultados.xlsx"):
 
@@ -188,7 +202,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     for epoch in range(max_epochs):        
         model.train()
         start_time = time.time()
-        running_loss, running_acc, n_samples = 0.0, 0.0, 0
+        running_loss, running_acc, n_samples = torch.tensor(0.0, device=device), torch.tensor(0.0, device=device), 0
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{max_epochs}", unit="batch")
         for x, y in pbar:
@@ -214,24 +228,24 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             n_samples += bs
 
             avg_loss = (running_loss / n_samples).item()
-            avg_acc  = (running_acc.float() / n_samples).item()
-            pbar.set_postfix({"loss": f"{avg_loss:.4f}", "acc": f"{avg_acc*100:.2f}%"})
+            avg_acc  = (running_acc / n_samples).item()
+            pbar.set_postfix({"loss": f"{float(avg_loss):.4f}", "acc": f"{float(avg_acc)*100:.2f}%"})
 
         scheduler.step()
         train_loss = (running_loss / max(n_samples, 1)).item()
-        train_acc  = (running_acc.float() / max(n_samples, 1)).item()        
+        train_acc  = (running_acc / max(n_samples, 1)).item()        
 
         writer.add_scalar("Loss/train", train_loss, epoch)
         writer.add_scalar("Accuracy/train", train_acc, epoch)
         writer.add_scalar("LearningRate", scheduler.get_last_lr()[0], epoch)
 
-        val_acc, val_class_accs, _ = validate(model, val_loader, device)
+        val_acc, val_class_accs, _ = validate(model, val_loader, device, training_mode)
         writer.add_scalar("Accuracy/val", val_acc, epoch)        
 
         test_class_accs = {}
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            final_test_acc, test_class_accs, test_cm = validate(model, test_loader, device)
+            final_test_acc, test_class_accs, test_cm = validate(model, test_loader, device, training_mode)
             writer.add_scalar("Accuracy/test", final_test_acc, epoch)
 
             if final_test_acc > best_test_acc:
@@ -281,6 +295,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     if best_cm is not None:
         fig = plot_confusion_matrix(best_cm, list(emotion_table.values()), os.path.join(output_model_folder, f"confusion_matrix_{sampler_type}_{batch_size}.png"))
         writer.add_figure("ConfusionMatrix/test", fig, epoch)
+        plt.close(fig)
+        
     writer.close()
 
     if best_row is not None:
