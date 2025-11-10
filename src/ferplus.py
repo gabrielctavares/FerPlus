@@ -80,6 +80,7 @@ class FERPlusDataset(Dataset):
         # Convert to torch tensors in (C,H,W) with C=1
         x = torch.from_numpy(final_image.astype(np.float32)).unsqueeze(0)
         y = torch.from_numpy(self._process_target(emotion).astype(np.float32))
+        
         return x, y
 
     def _load_folders(self, mode):

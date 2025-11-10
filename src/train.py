@@ -104,8 +104,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     num_classes = len(emotion_table)
     model = build_model(num_classes, model_name).to(device)
 
-    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
-    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True, False)
+    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 48), getattr(model, 'input_width', 48), training_mode, False, False)
+    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 48), getattr(model, 'input_width', 48), "majority", True, False)
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
