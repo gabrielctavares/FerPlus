@@ -96,10 +96,20 @@ def validate(model, dataloader, device, training_mode='majority'):
     }
 
     
-    all_labels = np.concatenate(all_labels)
-    all_preds  = np.concatenate(all_preds)
-    cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
+    # === CONFUSION MATRIX ===
+    if training_mode == "multi_target":
+        # converter multi-hot -> classe dominante
+        all_labels = np.vstack(all_labels)  # vira (N,C)
+        all_preds  = np.concatenate(all_preds)  # (N,)
 
+        labels_single = all_labels.argmax(axis=1)
+
+        cm = confusion_matrix(labels_single, all_preds, labels=list(emotion_table.keys()))
+    else:
+        all_labels = np.concatenate(all_labels)
+        all_preds  = np.concatenate(all_preds)
+        cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
+ 
     return acc, class_accs, cm
 
 def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
