@@ -189,7 +189,6 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         for x, y in pbar:
             x, y = x.to(device, non_blocking=is_cuda), y.to(device, non_blocking=is_cuda)
             
-            print("Validating batch of size:", x[0].shape)
             optimizer.zero_grad(set_to_none=True)
             logits = model(x)
             loss = loss_fn(training_mode, logits, y)
