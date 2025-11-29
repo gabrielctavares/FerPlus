@@ -60,32 +60,32 @@ def validate(model, dataloader, device, training_mode='majority'):
             x, y = x.to(device), y.to(device)
             logits = model(x)
 
-            if training_mode == "multi_target":
-                preds = logits.argmax(dim=1)
-                y_bool = (y > 0.5)
-                correct += multi_hot_accuracy(logits, y).item()
-                total   += y_bool.size(0)
+            # if training_mode == "multi_target":
+            #     preds = logits.argmax(dim=1)
+            #     y_bool = (y > 0.5)
+            #     correct += multi_hot_accuracy(logits, y).item()
+            #     total   += y_bool.size(0)
 
-                correct_per_class += (y_bool & (preds.unsqueeze(1) == torch.arange(num_classes, device=device).unsqueeze(0))).sum(dim=0)
-                total_per_class   += y_bool.sum(dim=0)
+            #     correct_per_class += (y_bool & (preds.unsqueeze(1) == torch.arange(num_classes, device=device).unsqueeze(0))).sum(dim=0)
+            #     total_per_class   += y_bool.sum(dim=0)
 
-                all_labels.append(y_bool.cpu().numpy())
-                all_preds.append(preds.cpu().numpy())
+            #     all_labels.append(y_bool.cpu().numpy())
+            #     all_preds.append(preds.cpu().numpy())
 
-            else:
-                preds  = logits.argmax(dim=1)
-                labels = y.argmax(dim=1)
+            # else:
+            preds  = logits.argmax(dim=1)
+            labels = y.argmax(dim=1)
 
-                correct += (preds == labels).sum().item()
-                total   += labels.size(0)
+            correct += (preds == labels).sum().item()
+            total   += labels.size(0)
 
-                for i in range(num_classes):
-                    mask = labels == i
-                    total_per_class[i]   += mask.sum()
-                    correct_per_class[i] += (preds[mask] == i).sum()
+            for i in range(num_classes):
+                mask = labels == i
+                total_per_class[i]   += mask.sum()
+                correct_per_class[i] += (preds[mask] == i).sum()
 
-                all_labels.append(labels.cpu().numpy())
-                all_preds.append(preds.cpu().numpy())
+            all_labels.append(labels.cpu().numpy())
+            all_preds.append(preds.cpu().numpy())
 
     acc = correct / max(total, 1)
 
@@ -97,18 +97,18 @@ def validate(model, dataloader, device, training_mode='majority'):
 
     
     # === CONFUSION MATRIX ===
-    if training_mode == "multi_target":
-        # converter multi-hot -> classe dominante
-        all_labels = np.vstack(all_labels)  # vira (N,C)
-        all_preds  = np.concatenate(all_preds)  # (N,)
+    # if training_mode == "multi_target":
+    #     # converter multi-hot -> classe dominante
+    #     all_labels = np.vstack(all_labels)  # vira (N,C)
+    #     all_preds  = np.concatenate(all_preds)  # (N,)
 
-        labels_single = all_labels.argmax(axis=1)
+    #     labels_single = all_labels.argmax(axis=1)
 
-        cm = confusion_matrix(labels_single, all_preds, labels=list(emotion_table.keys()))
-    else:
-        all_labels = np.concatenate(all_labels)
-        all_preds  = np.concatenate(all_preds)
-        cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
+    #     cm = confusion_matrix(labels_single, all_preds, labels=list(emotion_table.keys()))
+    # else:
+    all_labels = np.concatenate(all_labels)
+    all_preds  = np.concatenate(all_preds)
+    cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
  
     return acc, class_accs, cm
 
@@ -199,14 +199,14 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             bs = x.size(0)
             running_loss += loss.detach() * bs  
 
-            if training_mode == 'multi_target':
-                correct = multi_hot_accuracy(logits, y)
-                running_acc += correct
-            else:
-                preds = logits.argmax(dim=1)
-                true  = y.argmax(dim=1)
-                correct = (preds == true).sum()
-                running_acc += correct
+            # if training_mode == 'multi_target':
+            #     correct = multi_hot_accuracy(logits, y)
+            #     running_acc += correct
+            # else:
+            preds = logits.argmax(dim=1)
+            true  = y.argmax(dim=1)
+            correct = (preds == true).sum()
+            running_acc += correct
 
 
             n_samples += bs
