@@ -207,6 +207,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{max_epochs}", unit="batch")
         for x, y in pbar:
             x, y = x.to(device, non_blocking=is_cuda), y.to(device, non_blocking=is_cuda)
+            
+            print("Validating batch of size:", x[0].shape)
             optimizer.zero_grad(set_to_none=True)
             logits = model(x)
             loss = loss_fn(training_mode, logits, y)
@@ -287,9 +289,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                 logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
                 writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
 
-        if epoch - best_epoch >= 10:
-            logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
-            break
+        #if epoch - best_epoch >= 10:
+        #    logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
+        #    break
         
 
     if best_cm is not None:

@@ -8,7 +8,7 @@ if [ ! -d "$BASE_FOLDER" ]; then
 fi
 
 #  "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext"
-MODELS=("VGG16")
+MODELS=("DenseNet")
 #"majority" "probability" "crossentropy"
 MODES=("multi_target")
 # "weighted" 
