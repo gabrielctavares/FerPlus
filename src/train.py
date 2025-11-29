@@ -61,13 +61,12 @@ def validate(model, dataloader, device, training_mode='majority'):
             logits = model(x)
 
             if training_mode == "multi_target":
-                preds = (torch.sigmoid(logits) > 0.5).long()
-                y_bool = (y > 0.5).long()
+                preds = logits.argmax(dim=1)
+                y_bool = (y > 0.5)
+                correct += multi_hot_accuracy(logits, y).item()
+                total   += y_bool.size(0)
 
-                correct += (preds == y_bool).sum().item()
-                total   += y.numel()
-
-                correct_per_class += (preds & y_bool).sum(dim=0)
+                correct_per_class += (y_bool & (preds.unsqueeze(1) == torch.arange(num_classes, device=device).unsqueeze(0))).sum(dim=0)
                 total_per_class   += y_bool.sum(dim=0)
 
                 all_labels.append(y_bool.cpu().numpy())
@@ -96,47 +95,29 @@ def validate(model, dataloader, device, training_mode='majority'):
         for i in range(num_classes)
     }
 
-    # === Matriz de confusão ===
+    
+    # === CONFUSION MATRIX ===
     if training_mode == "multi_target":
-        all_labels = np.vstack(all_labels)
-        all_preds  = np.vstack(all_preds)
-        mcm = multilabel_confusion_matrix(all_labels, all_preds)
-        # Agrega as diagonais para ter uma visão geral N×N (opcional)
-        cm = np.zeros((num_classes, num_classes), dtype=np.float32)
-        for i in range(num_classes):
-            tn, fp, fn, tp = mcm[i].ravel()
-            cm[i, i] = tp
-            cm[i, :] = [fp] * num_classes  # simplificação visual opcional
+        # converter multi-hot -> classe dominante
+        all_labels = np.vstack(all_labels)  # vira (N,C)
+        all_preds  = np.concatenate(all_preds)  # (N,)
+
+        labels_single = all_labels.argmax(axis=1)
+
+        cm = confusion_matrix(labels_single, all_preds, labels=list(emotion_table.keys()))
     else:
         all_labels = np.concatenate(all_labels)
         all_preds  = np.concatenate(all_preds)
         cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
-
+ 
     return acc, class_accs, cm
 
-def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, mode: str = "any", threshold: float = 0.5) -> torch.Tensor:
-    preds = torch.sigmoid(logits) > threshold
-    y_bool = y > 0.5
-
-    if mode == "any":
-        # pelo menos uma label correta prevista
-        correct = (preds & y_bool).any(dim=1).float().sum()
-
-    elif mode == "all":
-        # todas labels corretas previstas
-        correct = (preds == y_bool).all(dim=1).float().sum()
-
-    elif mode == "ratio":
-        # proporção de classes corretas por amostra
-        # soma somente classes positivas no alvo
-        per_sample = ((preds & y_bool).sum(dim=1).float() /
-                      y_bool.sum(dim=1).clamp(min=1).float())
-        correct = per_sample.sum()
-
-    else:
-        raise ValueError(f"Modo inválido: {mode}. Use 'any', 'all' ou 'ratio'.")
-
-    return correct
+def multi_hot_accuracy(logits: torch.Tensor, y: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
+    preds = logits.argmax(dim=1)  
+    y_bool = (y > threshold)  # Usado para corrigir multi-hot targets, pois é adicionado um epsilon neles no processamento.
+    batch_indices = torch.arange(len(y), device=logits.device)
+    correct = y_bool[batch_indices, preds]
+    return correct.sum()
 
 def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=100, batch_size=32, num_workers=0, sampler_type=None, results_file="resultados.xlsx"):
 
@@ -219,12 +200,13 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             running_loss += loss.detach() * bs  
 
             if training_mode == 'multi_target':
-                correct = multi_hot_accuracy(logits, y, mode="ratio")
+                correct = multi_hot_accuracy(logits, y)
                 running_acc += correct
             else:
                 preds = logits.argmax(dim=1)
                 true  = y.argmax(dim=1)
-                running_acc += (preds == true).sum()
+                correct = (preds == true).sum()
+                running_acc += correct
 
 
             n_samples += bs

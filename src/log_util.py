@@ -31,9 +31,11 @@ def display_class_distribution(type, dataset, emotion_table):
     logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
 
 
-def plot_confusion_matrix(cm, class_names, save_path=None):
+def plot_confusion_matrix(cm, class_names, save_path=None):    
+    cm_normalized = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+
     fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt=".2f", cmap="Blues",
+    sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap="Blues",
                 xticklabels=class_names, yticklabels=class_names, ax=ax)
     ax.set_title("Matriz de Confusão")
     ax.set_xlabel("Predito")
