@@ -7,16 +7,17 @@ if [ ! -d "$BASE_FOLDER" ]; then
     exit 1
 fi
 
-#  "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext"
-MODELS=("DenseNet")
+# "VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext"
+MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
 #"majority" "probability" "crossentropy"
-MODES=("multi_target")
+MODES=("majority" "probability" "crossentropy" "multi_target")
 # "weighted" 
 SAMPLERS=("none")
 
 EPOCHS=70
 BATCH_SIZE=64
 NUM_WORKERS=4
+NOW=$(date +"%Y%m%d")
 
 for model in "${MODELS[@]}"; do
   for mode in "${MODES[@]}"; do
@@ -29,7 +30,8 @@ for model in "${MODELS[@]}"; do
         --epochs $EPOCHS \
         --batch_size $BATCH_SIZE \
         --num_workers $NUM_WORKERS \
-        --sampler "$sampler"
+        --sampler "$sampler" \
+        --results_file "results_${NOW}.xlsx"
     done
   done
 done
