@@ -56,7 +56,7 @@ class VGG13(nn.Module):
         return x
 
 class ResNet18(nn.Module):
-    learning_rate = 0.01
+    learning_rate = 0.001
     # input_width = 64
     # input_height = 64
     # input_channels = 1
@@ -79,7 +79,7 @@ class ResNet18(nn.Module):
         return self.model(x)
         
 class VGG16(nn.Module):
-    learning_rate = 0.01
+    learning_rate = 0.001
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.vgg16(weights=models.VGG16_Weights.DEFAULT)
@@ -101,7 +101,7 @@ class VGG16(nn.Module):
         return self.model(x)
 
 class VGG19(nn.Module):
-    learning_rate = 0.01
+    learning_rate = 0.001
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.vgg19(weights=models.VGG19_Weights.DEFAULT)
@@ -122,7 +122,7 @@ class VGG19(nn.Module):
         return self.model(x)
 
 class DenseNet(nn.Module):
-    learning_rate = 0.005
+    learning_rate = 0.001
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
