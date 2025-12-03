@@ -58,21 +58,7 @@ def validate(model, dataloader, device, training_mode='majority'):
     with torch.no_grad():
         for x, y in dataloader:
             x, y = x.to(device), y.to(device)
-            logits = model(x)
-
-            # if training_mode == "multi_target":
-            #     preds = logits.argmax(dim=1)
-            #     y_bool = (y > 0.5)
-            #     correct += multi_hot_accuracy(logits, y).item()
-            #     total   += y_bool.size(0)
-
-            #     correct_per_class += (y_bool & (preds.unsqueeze(1) == torch.arange(num_classes, device=device).unsqueeze(0))).sum(dim=0)
-            #     total_per_class   += y_bool.sum(dim=0)
-
-            #     all_labels.append(y_bool.cpu().numpy())
-            #     all_preds.append(preds.cpu().numpy())
-
-            # else:
+            logits = model(x)           
             preds  = logits.argmax(dim=1)
             labels = y.argmax(dim=1)
 
@@ -95,17 +81,7 @@ def validate(model, dataloader, device, training_mode='majority'):
         for i in range(num_classes)
     }
 
-    
-    # === CONFUSION MATRIX ===
-    # if training_mode == "multi_target":
-    #     # converter multi-hot -> classe dominante
-    #     all_labels = np.vstack(all_labels)  # vira (N,C)
-    #     all_preds  = np.concatenate(all_preds)  # (N,)
-
-    #     labels_single = all_labels.argmax(axis=1)
-
-    #     cm = confusion_matrix(labels_single, all_preds, labels=list(emotion_table.keys()))
-    # else:
+        
     all_labels = np.concatenate(all_labels)
     all_preds  = np.concatenate(all_preds)
     cm = confusion_matrix(all_labels, all_preds, labels=list(emotion_table.keys()))
@@ -196,12 +172,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
             optimizer.step()
             
             bs = x.size(0)
-            running_loss += loss.detach() * bs  
-
-            # if training_mode == 'multi_target':
-            #     correct = multi_hot_accuracy(logits, y)
-            #     running_acc += correct
-            # else:
+            running_loss += loss.detach() * bs              
             preds = logits.argmax(dim=1)
             true  = y.argmax(dim=1)
             correct = (preds == true).sum()
@@ -270,9 +241,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                 logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
                 writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
 
-        #if epoch - best_epoch >= 10:
-        #    logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
-        #    break
+        if epoch - best_epoch >= 10:
+            logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
+            break
         
 
     if best_cm is not None:
