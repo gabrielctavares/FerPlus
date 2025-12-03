@@ -25,6 +25,7 @@ def display_camadas_modelo(model):
     total = 0
     treinaveis = 0
 
+    print(model)
     for name, param in model.named_parameters():
         total += 1
         if param.requires_grad:
