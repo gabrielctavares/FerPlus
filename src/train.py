@@ -120,8 +120,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     
     display_camadas_modelo(model)
 
-    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
-    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, True, False)
+    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 48), getattr(model, 'input_width', 48), training_mode, False, False)
+    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 48), getattr(model, 'input_width', 48), training_mode, True, False)
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
@@ -246,8 +246,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
                 logging.info(f"    {cname:<10s}: {acc*100:.2f}%")
                 writer.add_scalar(f"TestClassAcc/{cname}", acc, epoch)
 
-        if epoch - best_epoch >= 10:
-            logging.info("Early stopping due to no improvement in validation accuracy for 10 epochs.")
+        if epoch - best_epoch >= 15:
+            logging.info("Early stopping due to no improvement in validation accuracy for 15 epochs.")
             break
         
 
