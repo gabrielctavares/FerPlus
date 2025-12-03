@@ -14,6 +14,7 @@ SAMPLERS=("weighted" "none")
 EPOCHS=70
 BATCH_SIZE=64
 NUM_WORKERS=4
+NOW=$(date +"%Y%m%d")
 
 for model in "${MODELS[@]}"; do
   for mode in "${MODES[@]}"; do
@@ -26,7 +27,8 @@ for model in "${MODELS[@]}"; do
         --epochs $EPOCHS \
         --batch_size $BATCH_SIZE \
         --num_workers $NUM_WORKERS \
-        --sampler "$sampler"
+        --sampler "$sampler" \
+        --results_file "results_${NOW}.xlsx"
     done
   done
 done
