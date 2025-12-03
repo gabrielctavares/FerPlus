@@ -20,7 +20,7 @@ from datetime import datetime
 from sklearn.metrics import multilabel_confusion_matrix, confusion_matrix
 import matplotlib.pyplot as plt
 
-from log_util import save_results_to_excel, display_class_distribution, plot_confusion_matrix, display_sampler_distribution
+from log_util import save_results_to_excel, display_class_distribution, plot_confusion_matrix, display_sampler_distribution, display_camadas_modelo
 
 emotion_table = {
     0: 'neutral', 1: 'happiness', 2: 'surprise', 3: 'sadness',
@@ -117,6 +117,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
 
     num_classes = len(emotion_table)
     model = build_model(num_classes, model_name).to(device)
+    
+    display_camadas_modelo(model)
 
     train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
     eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, True, False)

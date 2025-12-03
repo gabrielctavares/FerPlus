@@ -65,7 +65,15 @@ class ResNet18(nn.Module):
 
         self.model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)        
         self.model.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        
+        for p in self.model.parameters():
+            p.requires_grad = False
+
         self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
+        
+        # conv inicial deve ser treinável
+        for p in self.model.conv1.parameters():
+            p.requires_grad = True
 
     def forward(self, x):
         return self.model(x)
@@ -77,7 +85,17 @@ class VGG16(nn.Module):
         self.model = models.vgg16(weights=models.VGG16_Weights.DEFAULT)
         self.model.features[0] = nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
         
+                
+        for param in self.model.parameters():
+            param.requires_grad = False
+
         self.model.classifier[6] = nn.Linear(4096, num_classes)
+        
+        for param in self.model.classifier.parameters():
+            param.requires_grad = True
+
+        for param in self.model.features[0].parameters():
+            param.requires_grad = True
 
     def forward(self, x):
         return self.model(x)
@@ -88,7 +106,17 @@ class VGG19(nn.Module):
         super().__init__()
         self.model = models.vgg19(weights=models.VGG19_Weights.DEFAULT)
         self.model.features[0] = nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-        self.model.classifier[6] = nn.Linear(4096, num_classes)        
+        
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+        self.model.classifier[6] = nn.Linear(4096, num_classes)
+
+        for p in self.model.classifier.parameters():
+            p.requires_grad = True
+
+        for p in self.model.features[0].parameters():
+            p.requires_grad = True       
         
     def forward(self, x):
         return self.model(x)
@@ -99,8 +127,16 @@ class DenseNet(nn.Module):
         super().__init__()
         self.model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
         self.model.features[0] = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        
+        for p in self.model.parameters():
+            p.requires_grad = False
 
+        # classificador novo
         self.model.classifier = nn.Linear(1024, num_classes)
+
+        # conv inicial treinável
+        for p in self.model.features[0].parameters():
+            p.requires_grad = True
         
     def forward(self, x):
         return self.model(x)
@@ -112,8 +148,17 @@ class EfficientNet(nn.Module):
         super().__init__()
         self.model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)        
         self.model.features[0][0] = nn.Conv2d(1, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+               
+        # congelar tudo
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+        # classificador novo
         self.model.classifier[1] = nn.Linear(1280, num_classes)
-        
+
+        # conv inicial deve ser treinável
+        for p in self.model.features[0][0].parameters():
+            p.requires_grad = True
 
     def forward(self, x):
         return self.model(x)
@@ -124,7 +169,17 @@ class ConvNext(nn.Module):
         super().__init__()
         self.model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
         self.model.features[0] = nn.Conv2d(1, 96, kernel_size=(4, 4), stride=(4, 4), padding=(0, 0), bias=False)
+        
+        # congelar tudo
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+        # classificador novo
         self.model.classifier[2] = nn.Linear(768, num_classes)
+
+        # conv inicial treinável
+        for p in self.model.features[0][0].parameters():
+            p.requires_grad = True
         
     def forward(self, x):
         return self.model(x)

@@ -21,6 +21,22 @@ def save_results_to_excel(file_path, row_data):
     logging.info(f"✅ Resultados salvos em {file_path}")
 
 
+def display_camadas_modelo(model):
+    total = 0
+    treinaveis = 0
+
+    for name, param in model.named_parameters():
+        total += 1
+        if param.requires_grad:
+            treinaveis += 1
+            print(f"Treinável: {name}")
+        else:
+            print(f"Congelado: {name}")
+
+    print(f"\nTotal de camadas: {total}")
+    print(f"Camadas treináveis: {treinaveis}")
+    print(f"Camadas congeladas: {total - treinaveis}")
+
 def display_class_distribution(type, dataset, emotion_table):
     class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
     logging.info(f"{type} class distribution:")    
