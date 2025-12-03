@@ -64,7 +64,7 @@ class ResNet18(nn.Module):
         super().__init__()
 
         self.model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)        
-        self.model.conv1 = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        self.model.conv1 = nn.Conv2d(1, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
         
         for p in self.model.parameters():
             p.requires_grad = False
@@ -126,7 +126,7 @@ class DenseNet(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
-        self.model.features[0] = nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        self.model.features[0] = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1)
         
         for p in self.model.parameters():
             p.requires_grad = False
@@ -147,7 +147,7 @@ class EfficientNet(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)        
-        self.model.features[0][0] = nn.Conv2d(1, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        self.model.features[0][0] = nn.Conv2d(1, 32, kernel_size=(3, 3), stride=1, padding=(1, 1), bias=False)
                
         # congelar tudo
         for p in self.model.parameters():
@@ -168,7 +168,7 @@ class ConvNext(nn.Module):
     def __init__(self, num_classes):
         super().__init__()
         self.model = models.convnext_tiny(weights=models.ConvNeXt_Tiny_Weights.DEFAULT)
-        self.model.features[0] = nn.Conv2d(1, 96, kernel_size=(4, 4), stride=(4, 4), padding=(0, 0), bias=False)
+        self.model.features[0] = nn.Conv2d(1, 96, kernel_size=4, stride=2, padding=1, bias=False)
         
         # congelar tudo
         for p in self.model.parameters():
@@ -178,7 +178,7 @@ class ConvNext(nn.Module):
         self.model.classifier[2] = nn.Linear(768, num_classes)
 
         # conv inicial treinável
-        for p in self.model.features[0][0].parameters():
+        for p in self.model.features[0].parameters():
             p.requires_grad = True
         
     def forward(self, x):

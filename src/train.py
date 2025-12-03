@@ -149,7 +149,9 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         else:
             return 0.1
 
-    optimizer = optim.SGD(model.parameters(), lr=base_lr, momentum=0.9)
+    treinable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = optim.SGD(treinable_params, lr=base_lr, momentum=0.9, weight_decay=1e-4)
+    
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
     
     best_val_acc = 0.0
