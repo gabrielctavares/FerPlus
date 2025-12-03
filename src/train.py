@@ -151,7 +151,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
 
     treinable_params = [p for p in model.parameters() if p.requires_grad]
     print(f"Number of trainable parameters: {sum(p.numel() for p in treinable_params)}")
-    optimizer = optim.SGD(treinable_params, lr=base_lr, momentum=0.9)
+    optimizer = optim.SGD(treinable_params, lr=base_lr, momentum=0.9, weight_decay=1e-4)
     
     scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
     
