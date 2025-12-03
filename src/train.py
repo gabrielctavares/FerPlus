@@ -135,7 +135,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
-    display_sampler_distribution(train_loader)
+    #display_sampler_distribution(train_loader)
 
     base_lr = getattr(model, 'learning_rate', 1e-3)
 

@@ -9,9 +9,6 @@ from rect_util import Rect
 import img_util as imgu
 
 
-
-
-
 class FERPlusParameters:
     def __init__(self, target_size, width, height, training_mode="majority", determinisitc=False, shuffle=True):
         self.target_size = target_size
