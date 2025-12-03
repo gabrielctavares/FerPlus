@@ -50,11 +50,11 @@ def plot_confusion_matrix(cm, class_names, save_path=None):
 
     cm_norm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
     cm_norm = np.nan_to_num(cm_norm)
-    thresh = cm_norm.max() / 2.
 
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        color = "white" if cm_norm[i, j] > thresh else "black"
-        plt.text(j, i, f"{cm_norm[i, j]:.2f}", horizontalalignment="center", color=color)
+        value = cm_norm[i, j] * 100
+        txt = f"{value:.2f}".replace(".", ",") + "%"
+        plt.text(j, i, txt, horizontalalignment="center")
 
     plt.ylabel("Real")
     plt.xlabel("Predito")
