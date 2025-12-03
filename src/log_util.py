@@ -61,7 +61,7 @@ def plot_confusion_matrix(cm, class_names, save_path=None):
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path)
+        plt.savefig(save_path, format="pdf")
         logging.info(f"✅ Matriz de confusão salva em: {save_path}")
         plt.close(fig)
 

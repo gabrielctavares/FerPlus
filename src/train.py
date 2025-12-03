@@ -230,7 +230,7 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         
 
     if best_cm is not None:
-        fig = plot_confusion_matrix(best_cm, list(emotion_table.values()), os.path.join(output_model_folder, f"confusion_matrix_{sampler_type}_{batch_size}.png"))
+        fig = plot_confusion_matrix(best_cm, list(emotion_table.values()), os.path.join(output_model_folder, f"confusion_matrix_{sampler_type}_{batch_size}.pdf"))
         writer.add_figure("ConfusionMatrix/test", fig, epoch)
     writer.close()
 
