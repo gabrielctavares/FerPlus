@@ -10,21 +10,14 @@ from sklearn.metrics import confusion_matrix
 
 
 def save_results_to_excel(file_path, row_data):
-    """Salva ou atualiza os resultados em um arquivo Excel."""
-    sheet_name = "resultados"
+    import pandas as pd
+    try:
+        df = pd.read_excel(file_path, sheet_name="resultados")
+    except FileNotFoundError:
+        df = pd.DataFrame(columns=row_data.keys())
 
-    if os.path.exists(file_path):
-        try:
-            df_existente = pd.read_excel(file_path, sheet_name=sheet_name)
-        except ValueError:
-            df_existente = pd.DataFrame(columns=row_data.keys())
-    else:
-        df_existente = pd.DataFrame(columns=row_data.keys())
-
-    df_final = pd.concat([df_existente, pd.DataFrame([row_data])], ignore_index=True)
-    mode = 'a' if os.path.exists(file_path) else 'w'
-    with pd.ExcelWriter(file_path, engine='openpyxl', mode=mode, if_sheet_exists='replace') as writer:
-        df_final.to_excel(writer, sheet_name=sheet_name, index=False)
+    df = pd.concat([df, pd.DataFrame([row_data])], ignore_index=True)
+    df.to_excel(file_path, sheet_name="resultados", index=False)
     logging.info(f"✅ Resultados salvos em {file_path}")
 
 
