@@ -9,6 +9,7 @@ from rect_util import Rect
 import img_util as imgu
 
 
+import cv2
 
 
 
@@ -77,8 +78,12 @@ class FERPlusDataset(Dataset):
         )
         final_image = imgu.preproc_img(distorted, A=self.A, A_pinv=self.A_pinv) 
 
+        #show final_image
+        cv2.imshow("final_image", final_image)
+        cv2.waitKey(0)
         # Convert to torch tensors in (C,H,W) with C=1
-        x = torch.from_numpy(final_image.astype(np.float32)).unsqueeze(0)
+        
+        x = torch.from_numpy(final_image.astype(np.float32)).unsqueeze(0)        
         y = torch.from_numpy(self._process_target(emotion).astype(np.float32))
         return x, y
 

@@ -104,8 +104,8 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
     num_classes = len(emotion_table)
     model = build_model(num_classes, model_name).to(device)
 
-    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), training_mode, False, False)
-    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 64), getattr(model, 'input_width', 64), "majority", True, False)
+    train_params = FERPlusParameters(num_classes, getattr(model, 'input_height', 224), getattr(model, 'input_width', 224), training_mode, False, False)
+    eval_params  = FERPlusParameters(num_classes, getattr(model, 'input_height', 224), getattr(model, 'input_width', 224), "majority", True, False)
 
     train_ds = FERPlusDataset(base_folder, train_folders, "label.csv", train_params)
     val_ds   = FERPlusDataset(base_folder, valid_folders, "label.csv", eval_params)
@@ -234,8 +234,11 @@ def main(base_folder, training_mode='majority', model_name='VGG13', max_epochs=1
         writer.add_figure("ConfusionMatrix/test", fig, epoch)
     writer.close()
 
-    if best_row is not None:
-        save_results_to_excel(results_file, best_row)
+    try: 
+        if best_row is not None:
+            save_results_to_excel(results_file, best_row)
+    except Exception as e:
+        logging.error(f"Error saving results to excel: {e}")
 
     logging.info(f"Best val acc: {best_val_acc*100:.2f}% (epoch {best_epoch})")
     logging.info(f"Test acc @ best val: {best_test_acc*100:.2f}%")

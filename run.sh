@@ -7,9 +7,9 @@ if [ ! -d "$BASE_FOLDER" ]; then
     exit 1
 fi
 
-MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
-MODES=("majority" "probability" "crossentropy" "multi_target")
-SAMPLERS=("weighted" "none")
+MODELS=("ResNet18" "DenseNet" "EfficientNet" "ConvNext")
+MODES=("crossentropy")
+SAMPLERS=("none")
 
 EPOCHS=70
 BATCH_SIZE=64
