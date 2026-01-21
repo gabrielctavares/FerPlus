@@ -20,7 +20,7 @@ CHECKPOINTS=(
 SAMPLERS=("affectnet_weighted" "none")
 
 EPOCHS=70
-BATCH_SIZE=64
+BATCH_SIZE=32
 NUM_WORKERS=4
 NOW=$(date +"%Y%m%d")
 
