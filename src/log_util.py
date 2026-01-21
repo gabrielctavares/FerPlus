@@ -39,56 +39,45 @@ def display_camadas_modelo(model):
     print(f"Camadas congeladas: {total - treinaveis}")
 
 def display_class_distribution(type, dataset, emotion_table):
-    class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
+    if not hasattr(dataset, 'labels'):
+        labels = np.array(dataset.targets)
+    else:
+        labels = dataset.labels
+
+    class_counts = np.bincount(labels, minlength=len(emotion_table))
     logging.info(f"{type} class distribution:")    
     for idx, count in enumerate(class_counts):
         cname = emotion_table[idx]
-        logging.info(f"  {cname:10s}: {count} ({count / len(dataset.labels) * 100:.2f}%)")
+        logging.info(f"  {cname:10s}: {count} ({count / len(labels) * 100:.2f}%)")
     
-    logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
+    logging.info(f"{type} dataset size: {len(labels)}\n")
 
 
 def plot_confusion_matrix(cm, class_names, save_path=None):
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-    import logging
+    """Gera e retorna um gráfico Matplotlib a partir de uma matriz de confusão já calculada."""
+    fig = plt.figure(figsize=(6, 6))
+    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.title("Matriz de Confusão")
+    plt.colorbar()
+    tick_marks = np.arange(len(class_names))
+    plt.xticks(tick_marks, class_names, rotation=45)
+    plt.yticks(tick_marks, class_names)
 
-    # Normaliza a matriz
-    cm_normalized = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        value = cm_norm[i, j] * 100
+        txt = f"{value:.2f}".replace(".", ",") + "%"
+        plt.text(j, i, txt, horizontalalignment="center")
 
-    # Heatmap SEM colorbar
-    sns.heatmap(
-        cm_normalized,
-        annot=False,
-        cmap="Blues",
-        xticklabels=class_names,
-        yticklabels=class_names,
-        cbar=False,
-        ax=ax
-    )
-
-    # Inserindo manualmente os valores formatados
-    for i in range(cm_normalized.shape[0]):
-        for j in range(cm_normalized.shape[1]):
-            value = cm_normalized[i, j] * 100
-            txt = f"{value:.2f}".replace(".", ",") + "%"
-            ax.text(j + 0.5, i + 0.5, txt,
-                    ha='center', va='center', color='black', fontsize=10)
-
-    ax.set_title("Matriz de Confusão")
-    ax.set_xlabel("Predito")
-    ax.set_ylabel("Real")
-    plt.xticks(rotation=45, ha='right')
+    plt.ylabel("Real")
+    plt.xlabel("Predito")
     plt.tight_layout()
 
     # SALVA SOMENTE EM PDF
     if save_path:
-        if not save_path.lower().endswith(".pdf"):
-            save_path += ".pdf"
-        fig.savefig(save_path, format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(save_path, format="pdf")
         logging.info(f"✅ Matriz de confusão salva em: {save_path}")
 
     return fig
