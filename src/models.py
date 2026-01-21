@@ -13,11 +13,11 @@ def build_model(num_classes, model_name, ferplus=True, checkpoint_path=None):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         checkpoint = torch.load(checkpoint_path, map_location=device)
         state_dict = checkpoint["model_state"]
-        new_state_dict = {
-            k.replace("model.", "", 1): v
-            for k, v in state_dict.items()
-        }
-        model.load_state_dict(new_state_dict)
+        # new_state_dict = {
+        #     k.replace("model.", "", 1): v
+        #     for k, v in state_dict.items()
+        # }
+        model.load_state_dict(state_dict)
        
     return model
 
