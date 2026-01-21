@@ -147,7 +147,7 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
     base_lr = getattr(model, 'learning_rate', 1e-3)
 
    
-    optimizer, scheduler = build_optimizer(model, base_lr, weight_decay=1e-4, epochs=max_epochs)
+    optimizer, scheduler = build_optimizer(model, base_lr, weight_decay=0, epochs=max_epochs)
     loss_fn = torch.nn.CrossEntropyLoss()
     
     for epoch in range(max_epochs):        
