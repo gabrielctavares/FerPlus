@@ -17,7 +17,7 @@ CHECKPOINTS=(
     "$HOME/ferplus/checkpoints/convnext.pt"
 )
 
-SAMPLERS=("affectnet_weighted" "none")
+SAMPLERS=("none" "affectnet_weighted")
 
 EPOCHS=70
 BATCH_SIZE=64
