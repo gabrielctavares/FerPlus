@@ -22,13 +22,18 @@ def save_results_to_excel(file_path, row_data):
 
 
 def display_class_distribution(type, dataset, emotion_table):
-    class_counts = np.bincount(dataset.labels, minlength=len(emotion_table))
+    if not hasattr(dataset, 'labels'):
+        labels = np.array(dataset.targets)
+    else:
+        labels = dataset.labels
+
+    class_counts = np.bincount(labels, minlength=len(emotion_table))
     logging.info(f"{type} class distribution:")    
     for idx, count in enumerate(class_counts):
         cname = emotion_table[idx]
-        logging.info(f"  {cname:10s}: {count} ({count / len(dataset.labels) * 100:.2f}%)")
+        logging.info(f"  {cname:10s}: {count} ({count / len(labels) * 100:.2f}%)")
     
-    logging.info(f"{type} dataset size: {len(dataset.labels)}\n")
+    logging.info(f"{type} dataset size: {len(labels)}\n")
 
 
 def plot_confusion_matrix(cm, class_names, save_path=None):

@@ -28,7 +28,7 @@ def register_sampler(name):
         return fn
     return decorator
 
-def get_sampler(sampler_type, dataset: FERPlusDataset, seed: int = 42, verbose: bool = False, **kwargs):
+def get_sampler(sampler_type, dataset, seed: int = 42, verbose: bool = False, **kwargs):
     if sampler_type is None or sampler_type.lower() == "none":
         return None
     if sampler_type not in SAMPLER_REGISTRY:
@@ -44,28 +44,7 @@ def weighted_sampler(
     epsilon: float = 1e-6,
     **kwargs
 ):
-    """
-    Weighted sampler para datasets com distribuições de labels suaves (soft labels).  
-
-    Peso é calculado como a soma ponderada dos pesos das classes, onde o peso de cada classe é inversamente proporcional à sua frequência no dataset.  
-    Exemplo:
-        - Classe 0: 1000 amostras
-        - Classe 1: 500 amostras
-        - Classe 2: 250 amostras
-        - Classe 3: 250 amostras
-        - Classe 4: 100 amostras
-    Então, os pesos das classes seriam aproximadamente:
-        - Peso Classe 0: 1/1000 = 0.001
-        - Peso Classe 1: 1/500  = 0.002
-        - Peso Classe 2: 1/250  = 0.004
-        - Peso Classe 3: 1/250  = 0.004
-        - Peso Classe 4: 1/100  = 0.01
-
-    E uma amostra com label [0.1, 0.2, 0.3, 0.2, 0.2] teria peso:
-        Peso amostra = 0.1*0.001 + 0.2*0.002 + 0.3*0.004 + 0.2*0.004 + 0.2*0.01 = 0.0031
-
-
-    """
+   
     labels_list = [t[1] for t in dataset.data]
     labels_tensor = torch.from_numpy(np.array(labels_list, dtype=np.float32))
   
@@ -185,3 +164,27 @@ def weighted_balanced_sampler(dataset: FERPlusDataset, seed: int = 42, verbose: 
         replacement=True,
         generator=generator
     )
+
+@register_sampler("affectnet_weighted")
+def affectnet_weighted_sampler(dataset, seed: int = 42, verbose: bool = False, **kwargs):
+    """
+    Sampler ponderado específico para o dataset AffectNet, baseado na distribuição de classes do dataset original.
+    """    
+
+    targets = [label for _, label in dataset.samples]
+
+    class_count = torch.bincount(torch.tensor(targets))
+    class_weights = 1.0 / class_count.float()
+
+    sample_weights = [class_weights[t] for t in targets]
+
+    sampler = WeightedRandomSampler(
+        sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,  
+        generator=torch.Generator().manual_seed(seed)      
+    )
+    if verbose:
+        _log_class_distribution(targets, sampler=sampler, name="AffectNet Weighted Sampler")
+
+    return sampler
