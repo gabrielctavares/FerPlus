@@ -8,13 +8,22 @@ fi
 
 MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
 
+# CHECKPOINTS=(
+#     "$HOME/ferplus/checkpoints/vgg16.pt"
+#     "$HOME/ferplus/checkpoints/vgg19.pt"
+#     "$HOME/ferplus/checkpoints/resnet18.pt"
+#     "$HOME/ferplus/checkpoints/densenet.pt"
+#     "$HOME/ferplus/checkpoints/efficientnet.pt"
+#     "$HOME/ferplus/checkpoints/convnext.pt"
+# )
+
 CHECKPOINTS=(
-    "$HOME/ferplus/checkpoints/vgg16.pt"
-    "$HOME/ferplus/checkpoints/vgg19.pt"
-    "$HOME/ferplus/checkpoints/resnet18.pt"
-    "$HOME/ferplus/checkpoints/densenet.pt"
-    "$HOME/ferplus/checkpoints/efficientnet.pt"
-    "$HOME/ferplus/checkpoints/convnext.pt"
+    ""
+    ""
+    ""
+    ""
+    ""
+    ""
 )
 
 SAMPLERS=("none" "affectnet_weighted")

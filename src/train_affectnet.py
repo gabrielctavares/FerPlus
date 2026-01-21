@@ -87,7 +87,7 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
     print(os.listdir(DATA_DIR))
 
     output_model_path = os.path.join(base_folder, 'results')
-    output_model_folder = os.path.join(output_model_path, f"{model_name}_affectnet")
+    output_model_folder = os.path.join(output_model_path, f"{model_name}_{sampler_type if sampler_type else 'none'}_affectnet_{'checkpoint' if checkpoint_path else 'no_checkpoint'}")
     os.makedirs(output_model_folder, exist_ok=True)
 
 
@@ -96,9 +96,9 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
         logging.StreamHandler()
     ])
     
-    writer = SummaryWriter(log_dir=os.path.join(output_model_folder, f"tensorboard_{sampler_type or 'none'}"))
+    writer = SummaryWriter(log_dir=os.path.join(output_model_folder, f"tensorboard_{sampler_type if sampler_type else 'none'}"))
 
-    logging.info(f"Starting training {model_name} with max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'}.")
+    logging.info(f"Starting training {model_name} with max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'} with {"Checkpoint" if checkpoint_path else 'no checkpoint'}.")
 
     train_tf = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -206,7 +206,7 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
 
     if test_cm is not None:
         labels = list(range(len(emotion_table)))
-        fig = plot_confusion_matrix(test_cm, labels, "Matriz de Confusão", os.path.join(output_model_folder, f"confusion_matrix_{batch_size}.pdf"))
+        fig = plot_confusion_matrix(test_cm, labels, os.path.join(output_model_folder, f"confusion_matrix_{model_name}_{batch_size}_{sampler_type if sampler_type else 'none'}.pdf"))
         writer.add_figure("ConfusionMatrix/test", fig, max_epochs)        
     writer.close()
     
