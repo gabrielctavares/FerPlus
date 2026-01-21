@@ -13,11 +13,20 @@ def build_model(num_classes, model_name, ferplus=True, checkpoint_path=None):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         checkpoint = torch.load(checkpoint_path, map_location=device)
         state_dict = checkpoint["model_state"]
-        # new_state_dict = {
-        #     k.replace("model.", "", 1): v
-        #     for k, v in state_dict.items()
-        # }
-        model.load_state_dict(state_dict)
+        #ignora primeira camada 
+        if "model.features.0.weight" in state_dict:
+            state_dict.pop("model.features.0.weight")
+            state_dict.pop("model.features.0.bias", None)
+        
+        if "model.conv1.weight" in state_dict:
+            state_dict.pop("model.conv1.weight")
+            state_dict.pop("model.conv1.bias", None)
+        
+        if "model.features.0.0.weight" in state_dict:
+            state_dict.pop("model.features.0.0.weight")
+            state_dict.pop("model.features.0.0.bias", None)
+       
+        model.load_state_dict(state_dict, strict=False)
        
     return model
 
