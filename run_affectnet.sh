@@ -9,12 +9,12 @@ fi
 MODELS=("VGG16" "VGG19" "ResNet18" "DenseNet" "EfficientNet" "ConvNext")
 
 CHECKPOINTS=(
-    "$HOME/checkpoints/vgg16.pth"
-    "$HOME/checkpoints/vgg19.pth"
-    "$HOME/checkpoints/resnet18.pth"
-    "$HOME/checkpoints/densenet.pth"
-    "$HOME/checkpoints/efficientnet.pth"
-    "$HOME/checkpoints/convnext.pth"
+    "$HOME/checkpoints/vgg16.pt"
+    "$HOME/checkpoints/vgg19.pt"
+    "$HOME/checkpoints/resnet18.pt"
+    "$HOME/checkpoints/densenet.pt"
+    "$HOME/checkpoints/efficientnet.pt"
+    "$HOME/checkpoints/convnext.pt"
 )
 
 SAMPLERS=("affectnet_weighted" "none")
@@ -31,7 +31,7 @@ for i in "${!MODELS[@]}"; do
     for sampler in "${SAMPLERS[@]}"; do
         echo "Executando: $model | sampler=$sampler | checkpoint=$checkpoint"
 
-        python ./src/train.py \
+        python ./src/train_affectnet.py \
             -d "$BASE_FOLDER" \
             --checkpoint_path "$checkpoint" \
             --model_name "$model" \
