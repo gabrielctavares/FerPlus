@@ -1,6 +1,6 @@
 #!/bin/bash
 
-BASE_FOLDER="$HOME/affectnet/data"
+BASE_FOLDER="$HOME/ferplus/affectnet"
 if [ ! -d "$BASE_FOLDER" ]; then
     echo "Erro: Diretório $BASE_FOLDER não encontrado!"
     exit 1
