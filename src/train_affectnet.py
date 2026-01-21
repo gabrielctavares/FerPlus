@@ -98,7 +98,7 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
     
     writer = SummaryWriter(log_dir=os.path.join(output_model_folder, f"tensorboard_{sampler_type if sampler_type else 'none'}"))
 
-    logging.info(f"Starting training {model_name} with max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'} with {"Checkpoint" if checkpoint_path else 'no checkpoint'}.")
+    logging.info(f"Starting training {model_name} with max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'} with {'Checkpoint' if checkpoint_path else 'no checkpoint'}.")
 
     train_tf = transforms.Compose([
         transforms.RandomHorizontalFlip(),
