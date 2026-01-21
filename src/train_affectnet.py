@@ -101,7 +101,6 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
     logging.info(f"Starting training {model_name} with max epochs {max_epochs} and sampler {sampler_type if sampler_type else 'none'}.")
 
     train_tf = transforms.Compose([
-        transforms.Resize((224,224)),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(0.2, 0.2, 0.2, 0.1),
         transforms.RandomRotation(10),
@@ -113,7 +112,6 @@ def main(base_folder, model_name, checkpoint_path=None, max_epochs=100, batch_si
     ])
 
     val_tf = transforms.Compose([
-        transforms.Resize((224,224)),
         transforms.ToTensor(),
         transforms.Normalize(
             mean=[0.485, 0.456, 0.406],
